@@ -151,6 +151,114 @@ function SchwarmzeitKalender() {
   const [showSkForm, setShowSkForm] = useState(false);
   const [skForm, setSkForm] = useState({ datum: fmt(TODAY), volkId: null, staerke: 0, wabensitz: 0, sanftmut: 0, futtermenge: 0, eier: false, offeneBrut: false, verdeckelteBrut: false, nachschaffung: false, schwarmzellen: false, weiselbecher: false, koeniginGesehen: false, koeniginJahr: "", honigwaben: "", futtergabe: "", notiz: "" });
   const [skDetail, setSkDetail] = useState(null);
+  const [voiceListening, setVoiceListening] = useState(false);
+  const [voiceText, setVoiceText] = useState("");
+  const [voiceSupported] = useState(() => typeof window !== "undefined" && ("SpeechRecognition" in window || "webkitSpeechRecognition" in window));
+
+  const parseVoice = useCallback((text) => {
+    const t = text.toLowerCase();
+    const update = {};
+    // Volk
+    voelker.forEach(v => {
+      if (t.includes(v.name.toLowerCase())) update.volkId = v.id;
+    });
+    const volkMatch = t.match(/volk\s*(\d)/);
+    if (volkMatch) {
+      const vn = voelker.find(v => v.name.toLowerCase().includes("volk " + volkMatch[1]) || v.name.includes(volkMatch[1]));
+      if (vn) update.volkId = vn.id;
+    }
+    // Stärke
+    if (t.match(/stärke.{0,8}(stark|sehr gut)/)) update.staerke = 4;
+    else if (t.match(/stärke.{0,8}gut/)) update.staerke = 3;
+    else if (t.match(/stärke.{0,8}mäßig/)) update.staerke = 2;
+    else if (t.match(/stärke.{0,8}schwach/)) update.staerke = 1;
+    if (t.includes("stark") && !t.match(/stärke/)) update.staerke = 4;
+    // Wabensitz
+    if (t.match(/wabensitz.{0,8}(sehr gut|super)/)) update.wabensitz = 4;
+    else if (t.match(/wabensitz.{0,8}gut/)) update.wabensitz = 3;
+    else if (t.match(/wabensitz.{0,8}mäßig/)) update.wabensitz = 2;
+    else if (t.match(/wabensitz.{0,8}gering/)) update.wabensitz = 1;
+    // Sanftmut
+    if (t.match(/sanft|sehr sanft|friedlich|brav/)) update.sanftmut = 4;
+    else if (t.match(/ruhig/)) update.sanftmut = 3;
+    else if (t.match(/unruhig|nervös/)) update.sanftmut = 2;
+    else if (t.match(/stechlustig|aggressiv|stechen/)) update.sanftmut = 1;
+    // Futter
+    if (t.match(/futter.{0,8}(viel|genug|reichlich)/)) update.futtermenge = 4;
+    else if (t.match(/futter.{0,8}(ausreichend|okay|ok)/)) update.futtermenge = 3;
+    else if (t.match(/futter.{0,8}wenig/)) update.futtermenge = 2;
+    else if (t.match(/futter.{0,8}(leer|nichts|kein)/)) update.futtermenge = 1;
+    // Brut
+    if (t.match(/eier\s*(ja|gesehen|vorhanden|da)/) || t.match(/(stifte|eier)\s+ja/)) update.eier = true;
+    if (t.match(/eier.{0,4}(nein|keine|nicht)/)) update.eier = false;
+    if (t.match(/offene\s*brut\s*(ja|gesehen|da|vorhanden)/) || t.match(/offene\s*brut/) && !t.match(/offene\s*brut.{0,4}(nein|keine)/)) update.offeneBrut = true;
+    if (t.match(/verdeckelte?\s*brut/)) update.verdeckelteBrut = true;
+    // Weiselzellen
+    if (t.match(/schwarmzelle/)) update.schwarmzellen = !t.match(/schwarmzelle.{0,6}(nein|keine|nicht)/);
+    if (t.match(/nachschaffung/)) update.nachschaffung = !t.match(/nachschaffung.{0,6}(nein|keine|nicht)/);
+    if (t.match(/weiselbecher/)) update.weiselbecher = !t.match(/weiselbecher.{0,6}(nein|keine|nicht)/);
+    // Königin
+    if (t.match(/königin.{0,8}(gesehen|ja|da|gefunden)/)) update.koeniginGesehen = true;
+    if (t.match(/königin.{0,8}(nicht|nein)/)) update.koeniginGesehen = false;
+    // Honigwaben
+    const honigMatch = t.match(/(\d+)\s*(honig\s*waben|waben\s*entnommen|waben\s*honig|waben\s*raus)/);
+    if (honigMatch) update.honigwaben = honigMatch[1];
+    // Futtergabe
+    const futterMatch = t.match(/(\d+[.,]?\d*)\s*(kilo|kg)\s*(gefüttert|futter|gegeben)/);
+    if (futterMatch) update.futtergabe = futterMatch[1].replace(",", ".");
+    // Notiz — rest of text as fallback
+    return update;
+  }, [voelker]);
+
+  const startVoice = useCallback(() => {
+    if (!voiceSupported) return;
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const recognition = new SR();
+    recognition.lang = "de-DE";
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.maxAlternatives = 1;
+    let finalText = "";
+    recognition.onstart = () => { setVoiceListening(true); setVoiceText("🎙️ Sprich jetzt..."); };
+    recognition.onresult = (e) => {
+      let interim = "";
+      for (let i = 0; i < e.results.length; i++) {
+        if (e.results[i].isFinal) finalText += e.results[i][0].transcript + " ";
+        else interim += e.results[i][0].transcript;
+      }
+      setVoiceText(finalText + interim);
+    };
+    recognition.onend = () => {
+      setVoiceListening(false);
+      if (finalText.trim()) {
+        const parsed = parseVoice(finalText);
+        setSkForm(prev => {
+          const updated = { ...prev };
+          Object.keys(parsed).forEach(k => { updated[k] = parsed[k]; });
+          if (!updated.notiz && finalText.trim()) updated.notiz = finalText.trim();
+          return updated;
+        });
+        setVoiceText("✅ Erkannt: " + finalText.trim());
+      } else {
+        setVoiceText("");
+      }
+    };
+    recognition.onerror = (e) => {
+      setVoiceListening(false);
+      if (e.error === "not-allowed") setVoiceText("❌ Mikrofon nicht erlaubt — bitte Berechtigung erteilen");
+      else setVoiceText("❌ Fehler: " + e.error);
+    };
+    recognition.start();
+    // Auto-stop after 15s
+    setTimeout(() => { try { recognition.stop(); } catch(e) {} }, 15000);
+    // Store ref to allow manual stop
+    window._serbeeRecognition = recognition;
+  }, [voiceSupported, parseVoice]);
+
+  const stopVoice = useCallback(() => {
+    if (window._serbeeRecognition) { try { window._serbeeRecognition.stop(); } catch(e) {} }
+    setVoiceListening(false);
+  }, []);
 
   useEffect(() => { saveData("sz_voelker", voelker); }, [voelker]);
   useEffect(() => { saveData("sz_kontrollen", kontrollen); }, [kontrollen]);
@@ -564,6 +672,34 @@ function SchwarmzeitKalender() {
 
                 {showSkForm && (
                   <div style={{ marginTop: 12 }}>
+                    {/* Voice Input */}
+                    {voiceSupported && (
+                      <div style={{ marginBottom: 14 }}>
+                        <button onClick={voiceListening ? stopVoice : startVoice} style={{
+                          width: "100%", padding: "14px", borderRadius: 12, border: "none", cursor: "pointer",
+                          fontSize: 15, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+                          background: voiceListening ? C.dangerDim : C.surfaceLight,
+                          color: voiceListening ? C.danger : C.text,
+                          animation: voiceListening ? "pulse 1.5s infinite" : "none",
+                          transition: "all 0.2s",
+                        }}>
+                          <span style={{ fontSize: 22 }}>{voiceListening ? "⏹️" : "🎙️"}</span>
+                          {voiceListening ? "Aufnahme stoppen..." : "Spracheingabe starten"}
+                        </button>
+                        {voiceText && (
+                          <div style={{ marginTop: 8, padding: "10px 14px", background: C.surfaceLight, borderRadius: 10, fontSize: 12, color: C.textMuted, lineHeight: 1.5, border: `1px solid ${voiceListening ? C.accent + "44" : C.border}` }}>
+                            {voiceText}
+                          </div>
+                        )}
+                        {!voiceListening && !voiceText && (
+                          <div style={{ marginTop: 6, fontSize: 11, color: C.textDim, lineHeight: 1.5 }}>
+                            💡 Sag z.B.: <em>"Volk 1, Stärke gut, Eier ja, Königin gesehen, Futter ausreichend, 3 Honigwaben entnommen"</em>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    <style>{`@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.6; } }`}</style>
+
                     {/* Datum & Volk */}
                     <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
                       <div style={{ flex: 1, minWidth: 120 }}>
