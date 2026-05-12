@@ -145,11 +145,19 @@ function SchwarmzeitKalender() {
   const [showAddErnte, setShowAddErnte] = useState(false);
   const [ernteForm, setErnteForm] = useState({ volkId: null, tracht: "", kg: "", datum: fmt(TODAY), notiz: "" });
 
+  // Stockkarte
+  const [stockkarten, setStockkarten] = useState(() => loadData("sz_stockkarten", []));
+  const [skVolkId, setSkVolkId] = useState(null);
+  const [showSkForm, setShowSkForm] = useState(false);
+  const [skForm, setSkForm] = useState({ datum: fmt(TODAY), volkId: null, staerke: 0, wabensitz: 0, sanftmut: 0, futtermenge: 0, eier: false, offeneBrut: false, verdeckelteBrut: false, nachschaffung: false, schwarmzellen: false, weiselbecher: false, koeniginGesehen: false, koeniginJahr: "", honigwaben: "", futtergabe: "", notiz: "" });
+  const [skDetail, setSkDetail] = useState(null);
+
   useEffect(() => { saveData("sz_voelker", voelker); }, [voelker]);
   useEffect(() => { saveData("sz_kontrollen", kontrollen); }, [kontrollen]);
   useEffect(() => { saveData("sz_notizen", notizen); }, [notizen]);
   useEffect(() => { saveData("sz_standort", standort); }, [standort]);
   useEffect(() => { saveData("sz_ernten", ernten); }, [ernten]);
+  useEffect(() => { saveData("sz_stockkarten", stockkarten); }, [stockkarten]);
 
   // Fetch weather
   const fetchWeather = useCallback((loc) => {
@@ -466,7 +474,7 @@ function SchwarmzeitKalender() {
 
         {/* ══ TABS ══ */}
         <div style={{ display: "flex", gap: 4, marginBottom: 14, background: C.surface, borderRadius: 12, padding: 4, border: `1px solid ${C.border}` }}>
-          {[["kalender", "📅 Kalender"], ["wetter", "🌤️ Wetter"], ["region", "🏘️ Region"]].map(([key, label]) => (
+          {[["kalender", "📅 Kalender"], ["stockkarte", "📋 Stockkarte"], ["wetter", "🌤️ Wetter"], ["region", "🏘️ Region"]].map(([key, label]) => (
             <button key={key} onClick={() => setActiveTab(key)} style={{
               flex: 1, padding: "9px 14px", borderRadius: 9, border: "none", cursor: "pointer", fontSize: 13, fontWeight: 700,
               background: activeTab === key ? C.accentGlow : "transparent",
@@ -474,6 +482,229 @@ function SchwarmzeitKalender() {
             }}>{label}</button>
           ))}
         </div>
+
+        {/* ═══════════ STOCKKARTE TAB ═══════════ */}
+        {activeTab === "stockkarte" && (() => {
+          const EMPTY_SK = { datum: fmt(TODAY), volkId: null, staerke: 0, wabensitz: 0, sanftmut: 0, futtermenge: 0, eier: false, offeneBrut: false, verdeckelteBrut: false, nachschaffung: false, schwarmzellen: false, weiselbecher: false, koeniginGesehen: false, koeniginJahr: "", honigwaben: "", futtergabe: "", notiz: "" };
+
+          const skForVolk = skVolkId
+            ? stockkarten.filter(s => s.volkId === skVolkId).sort((a,b) => b.datum.localeCompare(a.datum))
+            : stockkarten.sort((a,b) => b.datum.localeCompare(a.datum));
+
+          const saveSk = () => {
+            setStockkarten(prev => [...prev, { ...skForm, id: Date.now() }]);
+            setSkForm({...EMPTY_SK, volkId: skForm.volkId });
+            setShowSkForm(false);
+          };
+          const deleteSk = (id) => setStockkarten(prev => prev.filter(s => s.id !== id));
+
+          const RatingRow = ({ label, value, onChange, options }) => (
+            <div style={{ marginBottom: 10 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: C.textMuted, marginBottom: 5 }}>{label}</div>
+              <div style={{ display: "flex", gap: 4 }}>
+                {options.map((opt, i) => (
+                  <button key={i} onClick={() => onChange(i + 1)} style={{
+                    flex: 1, padding: "8px 4px", borderRadius: 8, border: "none", cursor: "pointer",
+                    fontSize: 12, fontWeight: 600, transition: "all 0.15s",
+                    background: value === i + 1
+                      ? i < options.length * 0.33 ? "#ef4444" : i < options.length * 0.66 ? C.accent : C.success
+                      : C.surfaceLight,
+                    color: value === i + 1 ? "#000" : C.textDim,
+                  }}>{opt}</button>
+                ))}
+              </div>
+            </div>
+          );
+
+          const Toggle = ({ label, emoji, value, onChange }) => (
+            <button onClick={() => onChange(!value)} style={{
+              padding: "8px 12px", borderRadius: 10, border: "none", cursor: "pointer",
+              fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", gap: 5,
+              background: value ? C.successDim : C.surfaceLight,
+              color: value ? C.success : C.textDim,
+              transition: "all 0.15s",
+            }}>
+              <span style={{ fontSize: 15 }}>{emoji}</span> {label} {value ? "✓" : ""}
+            </button>
+          );
+
+          const ratingLabel = (val, options) => val > 0 && val <= options.length ? options[val - 1] : "–";
+          const ratingColor = (val, max) => val <= 0 ? C.textDim : val <= max * 0.33 ? "#ef4444" : val <= max * 0.66 ? C.accent : C.success;
+
+          return (
+            <div>
+              {/* Volk-Auswahl */}
+              <div style={{ display: "flex", gap: 4, marginBottom: 12, flexWrap: "wrap" }}>
+                <button onClick={() => setSkVolkId(null)} style={{
+                  padding: "7px 14px", borderRadius: 9, border: "none", cursor: "pointer", fontSize: 12, fontWeight: 700,
+                  background: !skVolkId ? C.accentGlow : C.surface, color: !skVolkId ? C.accent : C.textMuted,
+                  border: `1px solid ${!skVolkId ? C.accent + "44" : C.border}`,
+                }}>Alle</button>
+                {voelker.map(v => (
+                  <button key={v.id} onClick={() => { setSkVolkId(v.id); setSkForm(f => ({...f, volkId: v.id})); }} style={{
+                    padding: "7px 14px", borderRadius: 9, border: "none", cursor: "pointer", fontSize: 12, fontWeight: 700,
+                    background: skVolkId === v.id ? `${v.color}22` : C.surface,
+                    color: skVolkId === v.id ? v.color : C.textMuted,
+                    border: `1px solid ${skVolkId === v.id ? v.color + "66" : C.border}`,
+                  }}>
+                    <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: "50%", background: v.color, marginRight: 5 }} />
+                    {v.name}
+                  </button>
+                ))}
+              </div>
+
+              {/* Neue Durchsicht */}
+              <div style={{ ...card, marginBottom: 14, padding: 16 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: showSkForm ? 14 : 0 }}>
+                  <h3 style={{ ...sectionTitle, margin: 0 }}>📋 Neue Durchsicht</h3>
+                  <button onClick={() => setShowSkForm(!showSkForm)} style={{
+                    background: C.accent, color: "#000", border: "none", borderRadius: 8, padding: "6px 14px", cursor: "pointer", fontWeight: 700, fontSize: 12,
+                  }}>{showSkForm ? "× Schließen" : "+ Durchsicht eintragen"}</button>
+                </div>
+
+                {showSkForm && (
+                  <div style={{ marginTop: 12 }}>
+                    {/* Datum & Volk */}
+                    <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
+                      <div style={{ flex: 1, minWidth: 120 }}>
+                        <div style={{ fontSize: 10, color: C.textDim, marginBottom: 3 }}>Datum</div>
+                        <input type="date" value={skForm.datum} onChange={e => setSkForm(f => ({...f, datum: e.target.value}))} style={{ width: "100%", border: `1px solid ${C.border}`, borderRadius: 8, padding: "8px", fontSize: 13, background: C.surface, color: C.text, outline: "none" }} />
+                      </div>
+                      <div style={{ flex: 1, minWidth: 120 }}>
+                        <div style={{ fontSize: 10, color: C.textDim, marginBottom: 3 }}>Volk</div>
+                        <select value={skForm.volkId || ""} onChange={e => setSkForm(f => ({...f, volkId: Number(e.target.value)}))} style={{ width: "100%", border: `1px solid ${C.border}`, borderRadius: 8, padding: "8px", fontSize: 13, background: C.surface, color: C.text, outline: "none" }}>
+                          {voelker.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+                        </select>
+                      </div>
+                    </div>
+
+                    {/* Bewertungen */}
+                    <RatingRow label="🐝 Volksstärke" value={skForm.staerke} onChange={v => setSkForm(f => ({...f, staerke: v}))} options={["Schwach", "Mäßig", "Gut", "Stark"]} />
+                    <RatingRow label="🪹 Wabensitz" value={skForm.wabensitz} onChange={v => setSkForm(f => ({...f, wabensitz: v}))} options={["Gering", "Mäßig", "Gut", "Sehr gut"]} />
+                    <RatingRow label="😊 Sanftmut" value={skForm.sanftmut} onChange={v => setSkForm(f => ({...f, sanftmut: v}))} options={["Stechlustig", "Unruhig", "Ruhig", "Sehr sanft"]} />
+                    <RatingRow label="🍯 Futtermenge" value={skForm.futtermenge} onChange={v => setSkForm(f => ({...f, futtermenge: v}))} options={["Leer", "Wenig", "Ausreichend", "Viel"]} />
+
+                    {/* Brut & Weiselzellen */}
+                    <div style={{ fontSize: 12, fontWeight: 700, color: C.textMuted, marginBottom: 6 }}>🥚 Brutstatus</div>
+                    <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 12 }}>
+                      <Toggle label="Eier" emoji="🥚" value={skForm.eier} onChange={v => setSkForm(f => ({...f, eier: v}))} />
+                      <Toggle label="Offene Brut" emoji="🐛" value={skForm.offeneBrut} onChange={v => setSkForm(f => ({...f, offeneBrut: v}))} />
+                      <Toggle label="Verdeckelte Brut" emoji="🟫" value={skForm.verdeckelteBrut} onChange={v => setSkForm(f => ({...f, verdeckelteBrut: v}))} />
+                    </div>
+
+                    <div style={{ fontSize: 12, fontWeight: 700, color: C.textMuted, marginBottom: 6 }}>⚠️ Weiselzellen</div>
+                    <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 12 }}>
+                      <Toggle label="Weiselbecher" emoji="🫙" value={skForm.weiselbecher} onChange={v => setSkForm(f => ({...f, weiselbecher: v}))} />
+                      <Toggle label="Nachschaffung" emoji="👑" value={skForm.nachschaffung} onChange={v => setSkForm(f => ({...f, nachschaffung: v}))} />
+                      <Toggle label="Schwarmzellen" emoji="🚨" value={skForm.schwarmzellen} onChange={v => setSkForm(f => ({...f, schwarmzellen: v}))} />
+                    </div>
+
+                    {/* Königin */}
+                    <div style={{ fontSize: 12, fontWeight: 700, color: C.textMuted, marginBottom: 6 }}>👑 Königin</div>
+                    <div style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap", alignItems: "center" }}>
+                      <Toggle label="Gesehen" emoji="👁️" value={skForm.koeniginGesehen} onChange={v => setSkForm(f => ({...f, koeniginGesehen: v}))} />
+                      <div>
+                        <div style={{ fontSize: 10, color: C.textDim, marginBottom: 2 }}>Geburtsjahr</div>
+                        <select value={skForm.koeniginJahr} onChange={e => setSkForm(f => ({...f, koeniginJahr: e.target.value}))} style={{ border: `1px solid ${C.border}`, borderRadius: 8, padding: "7px 8px", fontSize: 12, background: C.surface, color: C.text, outline: "none" }}>
+                          <option value="">?</option>
+                          {[0,1,2,3,4,5].map(i => { const y = TODAY.getFullYear() - i; return <option key={y} value={y}>{y}</option>; })}
+                        </select>
+                      </div>
+                    </div>
+
+                    {/* Honig & Futter */}
+                    <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
+                      <div style={{ flex: 1, minWidth: 100 }}>
+                        <div style={{ fontSize: 10, color: C.textDim, marginBottom: 3 }}>🍯 Honigwaben entnommen</div>
+                        <input type="number" min="0" value={skForm.honigwaben} onChange={e => setSkForm(f => ({...f, honigwaben: e.target.value}))} placeholder="Anzahl" style={{ width: "100%", border: `1px solid ${C.border}`, borderRadius: 8, padding: "8px", fontSize: 13, background: C.surface, color: C.text, outline: "none" }} />
+                      </div>
+                      <div style={{ flex: 1, minWidth: 100 }}>
+                        <div style={{ fontSize: 10, color: C.textDim, marginBottom: 3 }}>🫙 Futtergabe (kg)</div>
+                        <input type="number" step="0.5" min="0" value={skForm.futtergabe} onChange={e => setSkForm(f => ({...f, futtergabe: e.target.value}))} placeholder="kg" style={{ width: "100%", border: `1px solid ${C.border}`, borderRadius: 8, padding: "8px", fontSize: 13, background: C.surface, color: C.text, outline: "none" }} />
+                      </div>
+                    </div>
+
+                    {/* Notiz */}
+                    <div style={{ marginBottom: 12 }}>
+                      <div style={{ fontSize: 10, color: C.textDim, marginBottom: 3 }}>📝 Notiz</div>
+                      <input value={skForm.notiz} onChange={e => setSkForm(f => ({...f, notiz: e.target.value}))} placeholder="Beobachtungen, Maßnahmen..." style={{ width: "100%", border: `1px solid ${C.border}`, borderRadius: 8, padding: "8px 10px", fontSize: 13, background: C.surface, color: C.text, outline: "none" }} />
+                    </div>
+
+                    <button onClick={saveSk} style={{ width: "100%", background: C.accent, color: "#000", border: "none", borderRadius: 10, padding: "12px", cursor: "pointer", fontWeight: 800, fontSize: 14 }}>
+                      ✓ Durchsicht speichern
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Historie */}
+              <div style={{ ...card, padding: 16 }}>
+                <h3 style={{ ...sectionTitle, margin: "0 0 10px" }}>📖 Durchsicht-Historie {skVolkId ? `· ${voelker.find(v => v.id === skVolkId)?.name || ""}` : ""}</h3>
+                {skForVolk.length === 0 && (
+                  <div style={{ textAlign: "center", padding: "24px 0", color: C.textDim, fontSize: 13 }}>Noch keine Durchsichten eingetragen.</div>
+                )}
+                {skForVolk.map(s => {
+                  const v = voelker.find(vk => vk.id === s.volkId);
+                  const open = skDetail === s.id;
+                  const staerkeOpts = ["Schwach", "Mäßig", "Gut", "Stark"];
+                  const wabensitzOpts = ["Gering", "Mäßig", "Gut", "Sehr gut"];
+                  const sanftmutOpts = ["Stechlustig", "Unruhig", "Ruhig", "Sehr sanft"];
+                  const futterOpts = ["Leer", "Wenig", "Ausreichend", "Viel"];
+                  return (
+                    <div key={s.id} style={{ marginBottom: 6 }}>
+                      {/* Summary row */}
+                      <div onClick={() => setSkDetail(open ? null : s.id)} style={{
+                        display: "flex", alignItems: "center", gap: 8, padding: "10px 12px",
+                        background: open ? C.accentGlow : C.surfaceLight, borderRadius: open ? "10px 10px 0 0" : 10,
+                        cursor: "pointer", border: `1px solid ${open ? C.accent + "44" : "transparent"}`,
+                      }}>
+                        <span style={{ fontSize: 12, fontWeight: 700, color: C.accent, minWidth: 65 }}>{s.datum.substring(5).replace("-", ".")}</span>
+                        {v && <span style={{ width: 8, height: 8, borderRadius: "50%", background: v.color, flexShrink: 0 }} />}
+                        {v && <span style={{ fontSize: 12, fontWeight: 600, color: v.color }}>{v.name}</span>}
+                        {/* Quick indicators */}
+                        <div style={{ display: "flex", gap: 3, marginLeft: "auto", fontSize: 11 }}>
+                          {s.staerke > 0 && <span style={{ padding: "2px 6px", borderRadius: 6, background: `${ratingColor(s.staerke, 4)}22`, color: ratingColor(s.staerke, 4), fontWeight: 700 }}>🐝{s.staerke}</span>}
+                          {s.schwarmzellen && <span style={{ padding: "2px 6px", borderRadius: 6, background: C.dangerDim, color: C.danger, fontWeight: 700 }}>🚨</span>}
+                          {s.koeniginGesehen && <span style={{ padding: "2px 6px", borderRadius: 6, background: C.successDim, color: C.success, fontWeight: 700 }}>👑</span>}
+                          {s.honigwaben && parseInt(s.honigwaben) > 0 && <span style={{ padding: "2px 6px", borderRadius: 6, background: `${C.accent}22`, color: C.accent, fontWeight: 700 }}>🍯{s.honigwaben}</span>}
+                        </div>
+                        <span style={{ fontSize: 11, color: C.textDim }}>{open ? "▲" : "▼"}</span>
+                      </div>
+                      {/* Detail */}
+                      {open && (
+                        <div style={{ background: C.surfaceLight, borderRadius: "0 0 10px 10px", padding: "12px 14px", borderTop: "none", border: `1px solid ${C.accent}44`, borderTopWidth: 0 }}>
+                          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, fontSize: 12, marginBottom: 8 }}>
+                            <div><span style={{ color: C.textDim }}>Stärke:</span> <span style={{ fontWeight: 700, color: ratingColor(s.staerke, 4) }}>{ratingLabel(s.staerke, staerkeOpts)}</span></div>
+                            <div><span style={{ color: C.textDim }}>Wabensitz:</span> <span style={{ fontWeight: 700, color: ratingColor(s.wabensitz, 4) }}>{ratingLabel(s.wabensitz, wabensitzOpts)}</span></div>
+                            <div><span style={{ color: C.textDim }}>Sanftmut:</span> <span style={{ fontWeight: 700, color: ratingColor(s.sanftmut, 4) }}>{ratingLabel(s.sanftmut, sanftmutOpts)}</span></div>
+                            <div><span style={{ color: C.textDim }}>Futter:</span> <span style={{ fontWeight: 700, color: ratingColor(s.futtermenge, 4) }}>{ratingLabel(s.futtermenge, futterOpts)}</span></div>
+                          </div>
+                          <div style={{ display: "flex", gap: 4, flexWrap: "wrap", fontSize: 11, marginBottom: 8 }}>
+                            {s.eier && <span style={{ padding: "3px 8px", borderRadius: 6, background: C.successDim, color: C.success }}>🥚 Eier</span>}
+                            {s.offeneBrut && <span style={{ padding: "3px 8px", borderRadius: 6, background: C.successDim, color: C.success }}>🐛 Offene Brut</span>}
+                            {s.verdeckelteBrut && <span style={{ padding: "3px 8px", borderRadius: 6, background: C.successDim, color: C.success }}>🟫 Verd. Brut</span>}
+                            {s.weiselbecher && <span style={{ padding: "3px 8px", borderRadius: 6, background: `${C.accent}22`, color: C.accent }}>🫙 Weiselbecher</span>}
+                            {s.nachschaffung && <span style={{ padding: "3px 8px", borderRadius: 6, background: `${C.accent}22`, color: C.accent }}>👑 Nachschaffung</span>}
+                            {s.schwarmzellen && <span style={{ padding: "3px 8px", borderRadius: 6, background: C.dangerDim, color: C.danger }}>🚨 Schwarmzellen</span>}
+                            {s.koeniginGesehen && <span style={{ padding: "3px 8px", borderRadius: 6, background: C.successDim, color: C.success }}>👁️ Königin ges.{s.koeniginJahr ? ` (${s.koeniginJahr})` : ""}</span>}
+                          </div>
+                          {(s.honigwaben || s.futtergabe) && (
+                            <div style={{ display: "flex", gap: 12, fontSize: 12, marginBottom: 8, color: C.text }}>
+                              {s.honigwaben && parseInt(s.honigwaben) > 0 && <span>🍯 {s.honigwaben} Waben entnommen</span>}
+                              {s.futtergabe && parseFloat(s.futtergabe) > 0 && <span>🫙 {s.futtergabe} kg gefüttert</span>}
+                            </div>
+                          )}
+                          {s.notiz && <div style={{ fontSize: 12, color: C.textMuted, fontStyle: "italic", marginBottom: 8 }}>📝 {s.notiz}</div>}
+                          <button onClick={() => { deleteSk(s.id); setSkDetail(null); }} style={{ background: C.dangerDim, color: C.danger, border: "none", borderRadius: 8, padding: "5px 12px", cursor: "pointer", fontSize: 11, fontWeight: 700 }}>Löschen</button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })()}
 
         {/* ═══════════ WETTER TAB ═══════════ */}
         {activeTab === "wetter" && (
