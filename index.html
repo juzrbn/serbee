@@ -1,0 +1,968 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="SerBee">
+<meta name="theme-color" content="#f59e0b">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<title>🐝 SerBee — Imkereiplaner</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🐝</text></svg>">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #0f1117; font-family: 'DM Sans','Inter',system-ui,sans-serif; color: #e2e4ec; -webkit-tap-highlight-color: transparent; }
+  #root { min-height: 100vh; min-height: 100dvh; padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); }
+  ::-webkit-scrollbar { height: 6px; }
+  ::-webkit-scrollbar-track { background: #181b23; border-radius: 3px; }
+  ::-webkit-scrollbar-thumb { background: #363a4a; border-radius: 3px; }
+  select option { background: #1e2130; color: #e2e4ec; }
+  #splash { position: fixed; inset: 0; background: #0f1117; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 9999; transition: opacity 0.4s; }
+  #splash.hide { opacity: 0; pointer-events: none; }
+  #splash h1 { font-size: 48px; margin-bottom: 8px; }
+  #splash p { color: #f59e0b; font-size: 20px; font-weight: 800; letter-spacing: -0.5px; }
+  #splash small { color: #5c6078; font-size: 12px; margin-top: 12px; }
+</style>
+<script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
+<script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
+<script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.26.9/babel.min.js"></script>
+</head>
+<body>
+<div id="splash"><h1>🐝</h1><p>SerBee</p><small>Imkereiplaner wird geladen...</small></div>
+<div id="root"></div>
+<script>
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('./sw.js').catch(function(){});
+  }
+</script>
+<script type="text/babel" data-presets="react">
+const { useState, useEffect, useCallback } = React;
+
+
+
+const MONTHS = ["Jan","Feb","Mär","Apr","Mai","Jun","Jul","Aug","Sep","Okt","Nov","Dez"];
+const MONTHS_FULL = ["Januar","Februar","März","April","Mai","Juni","Juli","August","September","Oktober","November","Dezember"];
+const WEEKDAYS = ["Mo","Di","Mi","Do","Fr","Sa","So"];
+const WEEKDAYS_FULL = ["Montag","Dienstag","Mittwoch","Donnerstag","Freitag","Samstag","Sonntag"];
+const TODAY = new Date();
+
+const TRACHTEN = [
+  { name: "Obstblüte", emoji: "🌸", start: [3, 10], end: [4, 15], color: "#f472b6" },
+  { name: "Raps", emoji: "🌼", start: [3, 20], end: [5, 10], color: "#facc15" },
+  { name: "Robinie", emoji: "🌿", start: [4, 20], end: [5, 25], color: "#4ade80" },
+  { name: "Linde", emoji: "🌳", start: [5, 15], end: [6, 20], color: "#34d399" },
+  { name: "Wald/Honigtau", emoji: "🌲", start: [5, 1], end: [7, 31], color: "#2dd4bf" },
+  { name: "Sonnenblume", emoji: "🌻", start: [6, 15], end: [8, 15], color: "#fbbf24" },
+  { name: "Heide", emoji: "💜", start: [7, 15], end: [8, 31], color: "#a78bfa" },
+];
+const SCHWARMZEIT = { start: [3, 15], end: [5, 30] };
+
+const STANDORTE = [
+  { name: "München", lat: 48.14, lon: 11.58 },
+  { name: "Berlin", lat: 52.52, lon: 13.41 },
+  { name: "Hamburg", lat: 53.55, lon: 9.99 },
+  { name: "Köln", lat: 50.94, lon: 6.96 },
+  { name: "Frankfurt", lat: 50.11, lon: 8.68 },
+  { name: "Stuttgart", lat: 48.78, lon: 9.18 },
+  { name: "Nürnberg", lat: 49.45, lon: 11.08 },
+  { name: "Dresden", lat: 51.05, lon: 13.74 },
+  { name: "Freiburg", lat: 47.99, lon: 7.85 },
+  { name: "Wien", lat: 48.21, lon: 16.37 },
+  { name: "Zürich", lat: 47.38, lon: 8.54 },
+  { name: "Salzburg", lat: 47.80, lon: 13.04 },
+];
+
+function isInRange(date, start, end, year) {
+  return date >= new Date(year, start[0], start[1]) && date <= new Date(year, end[0], end[1]);
+}
+function getDaysInMonth(y, m) { return new Date(y, m + 1, 0).getDate(); }
+function getFirstDayOfMonth(y, m) { const d = new Date(y, m, 1).getDay(); return d === 0 ? 6 : d - 1; }
+function fmt(d) { return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
+function parseD(s) { const [y,m,d] = s.split('-').map(Number); return new Date(y, m-1, d); }
+function loadData(k, fb) { try { const r = localStorage.getItem(k); return r ? JSON.parse(r) : fb; } catch(e) { return fb; } }
+function saveData(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch(e) {} }
+
+const wIcon = (code) => {
+  if (code == null) return "❓";
+  if (code <= 1) return "☀️"; if (code <= 3) return "⛅"; if (code <= 48) return "☁️";
+  if (code <= 67) return "🌧️"; if (code <= 77) return "🌨️"; if (code <= 82) return "🌧️";
+  if (code <= 86) return "🌨️"; return "⛈️";
+};
+const wLabel = (code) => {
+  if (code == null) return "—";
+  if (code <= 1) return "Sonnig"; if (code <= 2) return "Teilw. bewölkt"; if (code <= 3) return "Bewölkt";
+  if (code <= 48) return "Nebel"; if (code <= 55) return "Nieselregen"; if (code <= 67) return "Regen";
+  if (code <= 77) return "Schneefall"; if (code <= 82) return "Regenschauer"; if (code <= 86) return "Schneeschauer";
+  return "Gewitter";
+};
+
+const DEFAULT_VOELKER = [
+  { id: 1, name: "Volk 1", color: "#f59e0b" },
+  { id: 2, name: "Volk 2", color: "#60a5fa" },
+  { id: 3, name: "Volk 3", color: "#34d399" },
+];
+
+const C = {
+  bg: "#0f1117", surface: "#181b23", surfaceLight: "#1e2130",
+  border: "#2a2d3a", borderLight: "#363a4a",
+  text: "#e2e4ec", textMuted: "#8b8fa3", textDim: "#5c6078",
+  accent: "#f59e0b", accentGlow: "rgba(245,158,11,0.15)",
+  danger: "#ef4444", dangerDim: "rgba(239,68,68,0.15)",
+  success: "#10b981", successDim: "rgba(16,185,129,0.15)",
+  schwarm: "rgba(251,146,60,0.12)", schwarmBorder: "#c2410c",
+};
+
+function SchwarmzeitKalender() {
+  const [year, setYear] = useState(TODAY.getFullYear());
+  const [month, setMonth] = useState(TODAY.getMonth());
+  const [selectedDate, setSelectedDate] = useState(null);
+  const [voelker, setVoelker] = useState(() => loadData("sz_voelker", DEFAULT_VOELKER));
+  const [kontrollen, setKontrollen] = useState(() => loadData("sz_kontrollen", {}));
+  const [notizen, setNotizen] = useState(() => loadData("sz_notizen", {}));
+  const [showAddVolk, setShowAddVolk] = useState(false);
+  const [newVolkName, setNewVolkName] = useState("");
+  const [noteText, setNoteText] = useState("");
+  const [noteVolk, setNoteVolk] = useState(null);
+  const [weather, setWeather] = useState({});
+  const [weatherLoaded, setWeatherLoaded] = useState(false);
+  const [weatherError, setWeatherError] = useState(null);
+  const [activeTab, setActiveTab] = useState("kalender");
+
+  // Location state
+  const [standort, setStandort] = useState(() => loadData("sz_standort", STANDORTE[0]));
+  const [showOrtAuswahl, setShowOrtAuswahl] = useState(false);
+  const [customLat, setCustomLat] = useState("");
+  const [customLon, setCustomLon] = useState("");
+  const [customName, setCustomName] = useState("");
+  const [searchCity, setSearchCity] = useState("");
+  const [searchResults, setSearchResults] = useState([]);
+  const [searching, setSearching] = useState(false);
+
+  // Ernte tracking
+  const [ernten, setErnten] = useState(() => loadData("sz_ernten", []));
+  const [showAddErnte, setShowAddErnte] = useState(false);
+  const [ernteForm, setErnteForm] = useState({ volkId: null, tracht: "", kg: "", datum: fmt(TODAY), notiz: "" });
+
+  useEffect(() => { saveData("sz_voelker", voelker); }, [voelker]);
+  useEffect(() => { saveData("sz_kontrollen", kontrollen); }, [kontrollen]);
+  useEffect(() => { saveData("sz_notizen", notizen); }, [notizen]);
+  useEffect(() => { saveData("sz_standort", standort); }, [standort]);
+  useEffect(() => { saveData("sz_ernten", ernten); }, [ernten]);
+
+  // Fetch weather
+  const fetchWeather = useCallback((loc) => {
+    setWeatherLoaded(false);
+    setWeatherError(null);
+    setWeather({});
+    const base = "https://api.open-meteo.com/v1/forecast";
+    const params = new URLSearchParams({
+      latitude: loc.lat,
+      longitude: loc.lon,
+      daily: "temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max,weather_code,wind_speed_10m_max,sunrise,sunset,uv_index_max",
+      hourly: "temperature_2m,precipitation_probability,weather_code,relative_humidity_2m,wind_speed_10m",
+      timezone: "auto",
+      forecast_days: "14",
+    });
+    const url = base + "?" + params.toString();
+    fetch(url)
+      .then(r => {
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.json();
+      })
+      .then(data => {
+        if (data.error) throw new Error(data.reason || "API-Fehler");
+        if (!data.daily) throw new Error("Keine Tagesdaten");
+        const d = data.daily;
+        const w = {};
+        d.time.forEach((t, i) => {
+          w[t] = {
+            max: Math.round(d.temperature_2m_max[i]),
+            min: Math.round(d.temperature_2m_min[i]),
+            rain: d.precipitation_sum[i] ?? 0,
+            rainProb: d.precipitation_probability_max[i] ?? 0,
+            code: d.weather_code?.[i] ?? null,
+            wind: Math.round(d.wind_speed_10m_max?.[i] ?? 0),
+            windDir: 0,
+            sunrise: d.sunrise?.[i],
+            sunset: d.sunset?.[i],
+            uv: Math.round(d.uv_index_max?.[i] ?? 0),
+          };
+        });
+        const h = data.hourly;
+        if (h) {
+          h.time.forEach((t, i) => {
+            const dayKey = t.substring(0, 10);
+            const hour = parseInt(t.substring(11, 13));
+            if (w[dayKey]) {
+              if (!w[dayKey].hourly) w[dayKey].hourly = [];
+              w[dayKey].hourly.push({
+                hour,
+                temp: Math.round(h.temperature_2m[i]),
+                rainProb: h.precipitation_probability?.[i] ?? 0,
+                code: h.weather_code?.[i] ?? null,
+                humidity: h.relative_humidity_2m?.[i] ?? 0,
+                wind: Math.round(h.wind_speed_10m?.[i] ?? 0),
+              });
+            }
+          });
+        }
+        setWeather(w);
+        setWeatherLoaded(true);
+      })
+      .catch(err => {
+        console.error("Weather fetch error:", err);
+        setWeatherError(String(err.message || err));
+        setWeatherLoaded(true);
+      });
+  }, []);
+
+  useEffect(() => { fetchWeather(standort); }, [standort, fetchWeather]);
+
+  // Geocoding search
+  const searchOrt = useCallback(() => {
+    if (!searchCity.trim()) return;
+    setSearching(true);
+    setSearchResults([]);
+    fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(searchCity.trim())}&count=6&language=de&format=json`)
+      .then(r => r.json())
+      .then(data => {
+        if (data.results) {
+          setSearchResults(data.results.map(r => ({
+            name: `${r.name}${r.admin1 ? ', ' + r.admin1 : ''}${r.country ? ' (' + r.country + ')' : ''}`,
+            lat: r.latitude,
+            lon: r.longitude,
+          })));
+        } else {
+          setSearchResults([]);
+        }
+        setSearching(false);
+      })
+      .catch(() => { setSearching(false); });
+  }, [searchCity]);
+
+  const selectStandort = (loc) => {
+    setStandort(loc);
+    setShowOrtAuswahl(false);
+    setSearchResults([]);
+    setSearchCity("");
+  };
+
+  const windDir = (deg) => {
+    const dirs = ["N","NNO","NO","ONO","O","OSO","SO","SSO","S","SSW","SW","WSW","W","WNW","NW","NNW"];
+    return dirs[Math.round(deg / 22.5) % 16];
+  };
+
+  const toggleKontrolle = (dateKey, volkId) => {
+    setKontrollen(prev => {
+      const k = { ...prev }; if (!k[dateKey]) k[dateKey] = {};
+      k[dateKey][volkId] = !k[dateKey][volkId]; return k;
+    });
+  };
+
+  const saveNote = () => {
+    if (!selectedDate || !noteText.trim()) return;
+    const key = fmt(selectedDate);
+    setNotizen(prev => {
+      const n = { ...prev }; if (!n[key]) n[key] = [];
+      n[key] = [...n[key], { text: noteText, volkId: noteVolk }]; return n;
+    });
+    setNoteText(""); setNoteVolk(null);
+  };
+
+  const deleteNote = (dateKey, idx) => {
+    setNotizen(prev => {
+      const n = { ...prev }; n[dateKey] = n[dateKey].filter((_, i) => i !== idx);
+      if (n[dateKey].length === 0) delete n[dateKey]; return n;
+    });
+  };
+
+  const addVolk = () => {
+    if (!newVolkName.trim() || voelker.length >= 5) return;
+    const colors = ["#f59e0b","#60a5fa","#34d399","#f87171","#a78bfa"];
+    setVoelker(prev => [...prev, { id: Date.now(), name: newVolkName.trim(), color: colors[prev.length % colors.length] }]);
+    setNewVolkName(""); setShowAddVolk(false);
+  };
+
+  const removeVolk = (id) => setVoelker(prev => prev.filter(v => v.id !== id));
+  const prevMonth = () => { if (month === 0) { setMonth(11); setYear(y => y-1); } else setMonth(m => m-1); };
+  const nextMonth = () => { if (month === 11) { setMonth(0); setYear(y => y+1); } else setMonth(m => m+1); };
+
+  const daysInMonth = getDaysInMonth(year, month);
+  const firstDay = getFirstDayOfMonth(year, month);
+  const isSchwarmzeit = (date) => isInRange(date, SCHWARMZEIT.start, SCHWARMZEIT.end, year);
+  const getTrachten = (date) => TRACHTEN.filter(t => isInRange(date, t.start, t.end, year));
+  const hasKontrolle = (dk) => kontrollen[dk] && Object.values(kontrollen[dk]).some(Boolean);
+  const hasNotiz = (dk) => notizen[dk] && notizen[dk].length > 0;
+  const isToday = (day) => day === TODAY.getDate() && month === TODAY.getMonth() && year === TODAY.getFullYear();
+  const isSelected = (day) => selectedDate && day === selectedDate.getDate() && month === selectedDate.getMonth() && year === selectedDate.getFullYear();
+
+  const getNextKontrolle = () => {
+    const t = new Date();
+    if (!isSchwarmzeit(t)) return null;
+    const allDates = Object.keys(kontrollen).filter(k => hasKontrolle(k)).sort().reverse();
+    if (allDates.length === 0) return "Heute starten!";
+    const last = parseD(allDates[0]);
+    const diff = Math.floor((t - last) / 86400000);
+    if (diff >= 7) return `Überfällig! (${diff} Tage)`;
+    return `Nächste in ${7 - diff} Tag${7-diff===1?'':'en'}`;
+  };
+
+  const forecastDays = [];
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(TODAY); d.setDate(d.getDate() + i);
+    const key = fmt(d);
+    if (weather[key]) forecastDays.push({ date: d, key, ...weather[key] });
+  }
+
+  const beeScore = (w) => {
+    if (!w) return 3;
+    let s = 3;
+    if (w.max >= 15 && w.max <= 28) s++;
+    if (w.max >= 20 && w.max <= 25) s++;
+    if (w.rain < 1) s++; if (w.rainProb < 30) s++; if (w.wind < 20) s++;
+    if (w.rain > 5) s -= 2; if (w.wind > 30) s -= 2; if (w.max < 12) s -= 2;
+    return Math.max(1, Math.min(5, s));
+  };
+  const beeScoreLabel = (s) => {
+    if (s >= 5) return { text: "Ideal", color: "#4ade80", emoji: "🐝" };
+    if (s >= 4) return { text: "Gut", color: "#a3e635", emoji: "🐝" };
+    if (s >= 3) return { text: "OK", color: "#fbbf24", emoji: "🐝" };
+    if (s >= 2) return { text: "Mäßig", color: "#fb923c", emoji: "😐" };
+    return { text: "Schlecht", color: "#f87171", emoji: "❌" };
+  };
+
+  const selectedDateKey = selectedDate ? fmt(selectedDate) : null;
+  const selectedTrachten = selectedDate ? getTrachten(selectedDate) : [];
+  const selectedWeather = selectedDateKey ? weather[selectedDateKey] : null;
+  const selectedNotizen = selectedDateKey && notizen[selectedDateKey] ? notizen[selectedDateKey] : [];
+
+  // --- Shared inline style helpers ---
+  const pill = (bg, color, border) => ({ padding: "5px 11px", borderRadius: 16, border: `1.5px solid ${border}`, background: bg, fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", gap: 5 });
+  const sectionTitle = { fontSize: 11, fontWeight: 700, color: C.textDim, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 };
+  const card = { background: C.surface, borderRadius: 14, padding: 16, border: `1px solid ${C.border}` };
+
+  return (
+    <div style={{ background: C.bg, minHeight: "100vh", fontFamily: "'DM Sans','Inter',system-ui,sans-serif", color: C.text }}>
+      <div style={{ maxWidth: 760, margin: "0 auto", padding: "0 14px 40px" }}>
+
+        {/* ══ HEADER ══ */}
+        <div style={{ padding: "22px 0 14px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 8 }}>
+            <div>
+              <h1 style={{ fontSize: 30, fontWeight: 800, margin: 0, color: C.accent, letterSpacing: -1 }}>🐝 SerBee</h1>
+              <p style={{ fontSize: 13, color: C.textMuted, margin: "3px 0 0" }}>Dein Imkereiplaner</p>
+            </div>
+            {getNextKontrolle() && (
+              <div style={{
+                padding: "6px 14px", borderRadius: 20, fontSize: 12, fontWeight: 700,
+                background: getNextKontrolle().includes("Überfällig") ? C.dangerDim : C.accentGlow,
+                color: getNextKontrolle().includes("Überfällig") ? C.danger : C.accent,
+              }}>🔔 {getNextKontrolle()}</div>
+            )}
+          </div>
+
+          {/* Standort-Anzeige */}
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
+            <button onClick={() => setShowOrtAuswahl(!showOrtAuswahl)} style={{
+              background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: "6px 14px",
+              cursor: "pointer", fontSize: 13, color: C.text, fontWeight: 600, display: "flex", alignItems: "center", gap: 6,
+            }}>
+              📍 {standort.name}
+              <span style={{ fontSize: 10, color: C.textDim }}>({standort.lat.toFixed(2)}, {standort.lon.toFixed(2)})</span>
+              <span style={{ fontSize: 11, color: C.textDim }}>{showOrtAuswahl ? "▲" : "▼"}</span>
+            </button>
+          </div>
+
+          {/* Ortsauswahl-Dropdown */}
+          {showOrtAuswahl && (
+            <div style={{ ...card, marginTop: 8, padding: 14 }}>
+              <div style={sectionTitle}>Standort wählen</div>
+
+              {/* Stadt-Suche */}
+              <div style={{ display: "flex", gap: 4, marginBottom: 10 }}>
+                <input
+                  value={searchCity}
+                  onChange={e => setSearchCity(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && searchOrt()}
+                  placeholder="Stadt suchen..."
+                  style={{ flex: 1, background: C.surfaceLight, border: `1px solid ${C.border}`, borderRadius: 8, padding: "7px 10px", fontSize: 13, color: C.text, outline: "none" }}
+                />
+                <button onClick={searchOrt} disabled={searching} style={{ background: C.accent, color: "#000", border: "none", borderRadius: 8, padding: "7px 14px", cursor: "pointer", fontWeight: 700, fontSize: 13 }}>
+                  {searching ? "..." : "🔍"}
+                </button>
+              </div>
+
+              {/* Suchergebnisse */}
+              {searchResults.length > 0 && (
+                <div style={{ marginBottom: 10 }}>
+                  {searchResults.map((r, i) => (
+                    <div key={i} onClick={() => selectStandort(r)} style={{
+                      padding: "8px 10px", borderRadius: 8, cursor: "pointer", marginBottom: 2,
+                      background: C.surfaceLight, fontSize: 13, color: C.text,
+                      border: `1px solid transparent`,
+                    }}
+                    onMouseEnter={e => e.currentTarget.style.borderColor = C.accent + '66'}
+                    onMouseLeave={e => e.currentTarget.style.borderColor = 'transparent'}
+                    >
+                      📍 {r.name} <span style={{ fontSize: 11, color: C.textDim }}>({r.lat.toFixed(2)}, {r.lon.toFixed(2)})</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Schnellauswahl */}
+              <div style={{ ...sectionTitle, marginTop: 4 }}>Schnellauswahl</div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 10 }}>
+                {STANDORTE.map((s, i) => (
+                  <button key={i} onClick={() => selectStandort(s)} style={{
+                    background: standort.name === s.name ? C.accentGlow : C.surfaceLight,
+                    border: `1px solid ${standort.name === s.name ? C.accent + "66" : C.border}`,
+                    borderRadius: 8, padding: "5px 10px", cursor: "pointer", fontSize: 12,
+                    color: standort.name === s.name ? C.accent : C.text, fontWeight: 600,
+                  }}>{s.name}</button>
+                ))}
+              </div>
+
+              {/* Eigene Koordinaten */}
+              <div style={sectionTitle}>Eigene Koordinaten</div>
+              <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                <input value={customName} onChange={e => setCustomName(e.target.value)} placeholder="Name" style={{ width: 90, background: C.surfaceLight, border: `1px solid ${C.border}`, borderRadius: 8, padding: "6px 8px", fontSize: 12, color: C.text, outline: "none" }} />
+                <input value={customLat} onChange={e => setCustomLat(e.target.value)} placeholder="Breitengrad" style={{ width: 85, background: C.surfaceLight, border: `1px solid ${C.border}`, borderRadius: 8, padding: "6px 8px", fontSize: 12, color: C.text, outline: "none" }} />
+                <input value={customLon} onChange={e => setCustomLon(e.target.value)} placeholder="Längengrad" style={{ width: 85, background: C.surfaceLight, border: `1px solid ${C.border}`, borderRadius: 8, padding: "6px 8px", fontSize: 12, color: C.text, outline: "none" }} />
+                <button onClick={() => {
+                  const lat = parseFloat(customLat); const lon = parseFloat(customLon);
+                  if (!isNaN(lat) && !isNaN(lon)) {
+                    selectStandort({ name: customName.trim() || `${lat.toFixed(2)}, ${lon.toFixed(2)}`, lat, lon });
+                    setCustomLat(""); setCustomLon(""); setCustomName("");
+                  }
+                }} style={{ background: C.accent, color: "#000", border: "none", borderRadius: 8, padding: "6px 12px", cursor: "pointer", fontWeight: 700, fontSize: 12 }}>✓</button>
+              </div>
+            </div>
+          )}
+
+          {/* Völker */}
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 12, alignItems: "center" }}>
+            {voelker.map(v => (
+              <div key={v.id} style={pill(`${v.color}15`, C.text, `${v.color}44`)}>
+                <span style={{ width: 8, height: 8, borderRadius: "50%", background: v.color, flexShrink: 0 }} />
+                <span>{v.name}</span>
+                {voelker.length > 1 && <button onClick={() => removeVolk(v.id)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 14, color: C.textDim, padding: "0 2px", lineHeight: 1 }}>×</button>}
+              </div>
+            ))}
+            {voelker.length < 5 && !showAddVolk && (
+              <button onClick={() => setShowAddVolk(true)} style={{ background: "none", border: `1.5px dashed ${C.borderLight}`, borderRadius: 16, padding: "5px 12px", cursor: "pointer", fontSize: 12, color: C.textDim, fontWeight: 600 }}>+ Volk</button>
+            )}
+            {showAddVolk && (
+              <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                <input value={newVolkName} onChange={e => setNewVolkName(e.target.value)} placeholder="Name..." style={{ border: `1.5px solid ${C.border}`, borderRadius: 8, padding: "5px 8px", fontSize: 12, width: 100, outline: "none", background: C.surfaceLight, color: C.text }} onKeyDown={e => e.key === 'Enter' && addVolk()} autoFocus />
+                <button onClick={addVolk} style={{ background: C.success, color: "#fff", border: "none", borderRadius: 6, padding: "4px 9px", cursor: "pointer", fontWeight: 700 }}>✓</button>
+                <button onClick={() => setShowAddVolk(false)} style={{ background: C.surfaceLight, border: "none", borderRadius: 6, padding: "4px 9px", cursor: "pointer", color: C.textMuted }}>×</button>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* ══ TABS ══ */}
+        <div style={{ display: "flex", gap: 4, marginBottom: 14, background: C.surface, borderRadius: 12, padding: 4, border: `1px solid ${C.border}` }}>
+          {[["kalender", "📅 Kalender"], ["wetter", "🌤️ Wetter"], ["region", "🏘️ Region"]].map(([key, label]) => (
+            <button key={key} onClick={() => setActiveTab(key)} style={{
+              flex: 1, padding: "9px 14px", borderRadius: 9, border: "none", cursor: "pointer", fontSize: 13, fontWeight: 700,
+              background: activeTab === key ? C.accentGlow : "transparent",
+              color: activeTab === key ? C.accent : C.textMuted,
+            }}>{label}</button>
+          ))}
+        </div>
+
+        {/* ═══════════ WETTER TAB ═══════════ */}
+        {activeTab === "wetter" && (
+          <div>
+            <h3 style={{ fontSize: 14, fontWeight: 700, color: C.textMuted, margin: "0 0 10px", textTransform: "uppercase", letterSpacing: 0.5 }}>
+              14-Tage Vorhersage · {standort.name}
+            </h3>
+
+            {!weatherLoaded ? (
+              <div style={{ ...card, textAlign: "center", padding: 40, color: C.textDim }}>
+                <div style={{ fontSize: 28, marginBottom: 8 }}>⏳</div>
+                Wetterdaten werden geladen...
+              </div>
+            ) : weatherError ? (
+              <div style={{ ...card, textAlign: "center", padding: 30 }}>
+                <div style={{ fontSize: 28, marginBottom: 8 }}>⚠️</div>
+                <div style={{ color: C.danger, fontWeight: 600, marginBottom: 6 }}>Fehler beim Laden der Wetterdaten</div>
+                <div style={{ fontSize: 12, color: C.textDim, marginBottom: 12 }}>{weatherError}</div>
+                <button onClick={() => fetchWeather(standort)} style={{ background: C.accent, color: "#000", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontWeight: 700 }}>🔄 Erneut versuchen</button>
+              </div>
+            ) : Object.keys(weather).length === 0 ? (
+              <div style={{ ...card, textAlign: "center", padding: 40, color: C.textDim }}>Keine Wetterdaten verfügbar</div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {Object.keys(weather).sort().map((key, idx) => {
+                  const w = weather[key]; const d = parseD(key);
+                  const dayName = idx === 0 ? "Heute" : idx === 1 ? "Morgen" : WEEKDAYS_FULL[(d.getDay()+6)%7];
+                  const sl = beeScoreLabel(beeScore(w));
+                  const schwarm = isSchwarmzeit(d);
+                  const trachten = getTrachten(d);
+                  return (
+                    <div key={key} style={{
+                      ...card, padding: "14px 16px",
+                      borderColor: idx === 0 ? C.accent + "44" : C.border,
+                      display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap",
+                      ...(idx === 0 ? { boxShadow: `0 0 20px ${C.accentGlow}` } : {}),
+                    }}>
+                      <div style={{ minWidth: 90 }}>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: idx === 0 ? C.accent : C.text }}>{dayName}</div>
+                        <div style={{ fontSize: 11, color: C.textDim }}>{d.getDate()}. {MONTHS[d.getMonth()]}</div>
+                      </div>
+                      <div style={{ fontSize: 32, lineHeight: 1 }}>{wIcon(w.code)}</div>
+                      <div style={{ flex: 1, minWidth: 100 }}>
+                        <div style={{ fontSize: 11, color: C.textMuted, marginBottom: 2 }}>{wLabel(w.code)}</div>
+                        <div style={{ display: "flex", gap: 8, alignItems: "baseline" }}>
+                          <span style={{ fontSize: 22, fontWeight: 800 }}>{w.max}°</span>
+                          <span style={{ fontSize: 14, color: C.textDim }}>{w.min}°</span>
+                        </div>
+                      </div>
+                      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", fontSize: 11, color: C.textMuted }}>
+                        <div>💧 {w.rain}mm ({w.rainProb}%)</div>
+                        <div>💨 {w.wind} km/h</div>
+                        <div>☀️ UV {w.uv}</div>
+                      </div>
+                      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", minWidth: 52 }}>
+                        <div style={{ fontSize: 10, color: C.textDim, marginBottom: 2 }}>Bienen</div>
+                        <div style={{ background: `${sl.color}22`, border: `1px solid ${sl.color}44`, borderRadius: 8, padding: "3px 10px", fontSize: 12, fontWeight: 700, color: sl.color }}>{sl.emoji} {sl.text}</div>
+                      </div>
+                      {trachten.length > 0 && <div style={{ display: "flex", gap: 3 }}>{trachten.slice(0,3).map((t,j) => <span key={j} title={t.name} style={{ fontSize: 11, background: `${t.color}22`, borderRadius: 6, padding: "2px 5px" }}>{t.emoji}</span>)}</div>}
+                      {schwarm && <span style={{ fontSize: 10, background: C.dangerDim, color: C.danger, padding: "2px 7px", borderRadius: 8, fontWeight: 700 }}>⚠ Schwarm</span>}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Imker-Tipps */}
+            {forecastDays.length > 0 && (
+              <div style={{ ...card, marginTop: 14, padding: 16 }}>
+                <h4 style={{ ...sectionTitle, marginBottom: 8 }}>🐝 Imker-Tipps zur Wetterlage</h4>
+                {(() => {
+                  const good = forecastDays.filter(d => beeScore(d) >= 4);
+                  const rain = forecastDays.filter(d => d.rain > 2);
+                  const hot = forecastDays.filter(d => d.max >= 28);
+                  return (
+                    <div style={{ fontSize: 13, lineHeight: 1.7 }}>
+                      {good.length > 0 && <p style={{ margin: "0 0 6px" }}>✅ <strong>Gute Flugtage:</strong> {good.map(d => `${WEEKDAYS_FULL[(d.date.getDay()+6)%7]} (${d.max}°)`).join(", ")} — ideal für Durchsicht.</p>}
+                      {good.length === 0 && <p style={{ margin: "0 0 6px" }}>⚠️ Keine idealen Flugtage — Durchsichten wenn möglich verschieben.</p>}
+                      {rain.length > 0 && <p style={{ margin: "0 0 6px" }}>🌧️ <strong>Regen:</strong> {rain.map(d => `${WEEKDAYS_FULL[(d.date.getDay()+6)%7]} (${d.rain}mm)`).join(", ")} — Futtervorrat prüfen.</p>}
+                      {hot.length > 0 && <p style={{ margin: "0 0 6px" }}>🌡️ <strong>Heiß:</strong> {hot.map(d => `${WEEKDAYS_FULL[(d.date.getDay()+6)%7]} (${d.max}°)`).join(", ")} — Wasserversorgung sicherstellen.</p>}
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
+
+            {/* Stündlich heute */}
+            {forecastDays[0]?.hourly && (
+              <div style={{ ...card, marginTop: 14, padding: 16 }}>
+                <h4 style={{ ...sectionTitle, marginBottom: 10 }}>Heute stündlich</h4>
+                <div style={{ display: "flex", gap: 2, overflowX: "auto", paddingBottom: 4 }}>
+                  {forecastDays[0].hourly.filter(h => h.hour >= 6 && h.hour <= 21).map((h, i) => {
+                    const now = h.hour === new Date().getHours();
+                    return (
+                      <div key={i} style={{ minWidth: 48, textAlign: "center", padding: "8px 4px", borderRadius: 10, background: now ? C.accentGlow : "transparent", border: now ? `1px solid ${C.accent}44` : "1px solid transparent" }}>
+                        <div style={{ fontSize: 10, color: C.textDim, marginBottom: 4 }}>{String(h.hour).padStart(2,'0')}:00</div>
+                        <div style={{ fontSize: 18, lineHeight: 1, marginBottom: 4 }}>{wIcon(h.code)}</div>
+                        <div style={{ fontSize: 13, fontWeight: 700 }}>{h.temp}°</div>
+                        <div style={{ fontSize: 9, color: C.textDim, marginTop: 3 }}>💧{h.rainProb}%</div>
+                        <div style={{ fontSize: 9, color: C.textDim }}>💨{h.wind}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ═══════════ REGION TAB ═══════════ */}
+        {activeTab === "region" && (() => {
+          const REF = [
+            { tracht: "Obstblüte", emoji: "🌸", kg: "5–12", zeit: "April – Mitte Mai", hinweis: "Stark witterungsabhängig, Spätfrost-Risiko im Lechtal" },
+            { tracht: "Raps", emoji: "🌼", kg: "10–25", zeit: "Ende April – Mitte Juni", hinweis: "Sehr gute Tracht wenn Rapsfelder in Flugreichweite, schnell kristallisierend" },
+            { tracht: "Robinie", emoji: "🌿", kg: "5–15", zeit: "Ende Mai – Mitte Juni", hinweis: "Im Raum Landsberg eher selten, punktuell möglich" },
+            { tracht: "Linde", emoji: "🌳", kg: "8–20", zeit: "Juni – Juli", hinweis: "Gute Bestände in Parks und Alleen, witterungsabhängig" },
+            { tracht: "Wald/Honigtau", emoji: "🌲", kg: "0–30+", zeit: "Juni – August", hinweis: "Sehr variabel! Hängt von Lachniden-Entwicklung ab. In guten Jahren Spitzenerträge, oft aber Totalausfall" },
+            { tracht: "Sonnenblume", emoji: "🌻", kg: "3–10", zeit: "Juli – August", hinweis: "Nur bei Anbau in der Nähe relevant" },
+            { tracht: "Heide", emoji: "💜", kg: "0–5", zeit: "August – September", hinweis: "Im Voralpenland kaum relevant, eher norddeutsche Tracht" },
+          ];
+          const LINKS = [
+            { name: "TrachtNet Bayern — Stockwaagen Landsberg", url: "https://www.trachtnet.de", desc: "Tagesaktuelle Waagendaten vom Agrarbildungszentrum Landsberg und weiteren Standorten in Oberbayern" },
+            { name: "Bezirk Oberbayern — Bienenstockwaagen", url: "https://www.bezirk-oberbayern.de/Umwelt/Fachberatung-f%C3%BCr-Imkerei/Bienenstockwaagen/", desc: "Stockwaagen der Fachberatung für Imkerei, u.a. Standort Landsberg am Lech" },
+            { name: "Waldtrachtbeobachter Süd", url: "https://www.waldtrachtbeobachter-sued.de", desc: "Beobachtungen zu Honigtauerzeugern an Fichten und Tannen — wichtig für Waldtracht-Prognose" },
+            { name: "BeeScales.io — Öffentliche Waagen", url: "https://public.beescales.io", desc: "Öffentlich einsehbare Stockwaagen-Daten aus ganz Europa" },
+            { name: "HoneyPi — Open Source Stockwaage", url: "https://honey-pi.de", desc: "Selbstbau-Stockwaage auf Raspberry Pi Basis, Community-Daten" },
+          ];
+          const thisYear = TODAY.getFullYear();
+          const thisYearErnten = ernten.filter(e => e.datum && e.datum.startsWith(String(thisYear)));
+          const totalKg = thisYearErnten.reduce((s, e) => s + (parseFloat(e.kg) || 0), 0);
+          const byTracht = {};
+          thisYearErnten.forEach(e => { if (e.tracht) { byTracht[e.tracht] = (byTracht[e.tracht] || 0) + (parseFloat(e.kg) || 0); } });
+          const byVolk = {};
+          thisYearErnten.forEach(e => { const v = voelker.find(vk => vk.id === e.volkId); const name = v ? v.name : "Unbekannt"; byVolk[name] = (byVolk[name] || 0) + (parseFloat(e.kg) || 0); });
+
+          const addErnte = () => {
+            if (!ernteForm.kg || parseFloat(ernteForm.kg) <= 0) return;
+            setErnten(prev => [...prev, { ...ernteForm, id: Date.now(), kg: parseFloat(ernteForm.kg) }]);
+            setErnteForm({ volkId: null, tracht: "", kg: "", datum: fmt(TODAY), notiz: "" });
+            setShowAddErnte(false);
+          };
+          const deleteErnte = (id) => setErnten(prev => prev.filter(e => e.id !== id));
+
+          return (
+            <div>
+              {/* Eigene Ernten */}
+              <div style={{ ...card, marginBottom: 14, padding: 16 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                  <h3 style={{ ...sectionTitle, margin: 0 }}>🍯 Meine Honigernten {thisYear}</h3>
+                  <button onClick={() => setShowAddErnte(!showAddErnte)} style={{ background: C.accent, color: "#000", border: "none", borderRadius: 8, padding: "6px 14px", cursor: "pointer", fontWeight: 700, fontSize: 12 }}>
+                    {showAddErnte ? "× Abbrechen" : "+ Ernte eintragen"}
+                  </button>
+                </div>
+
+                {/* Zusammenfassung */}
+                {thisYearErnten.length > 0 && (
+                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 14 }}>
+                    <div style={{ background: C.accentGlow, border: `1px solid ${C.accent}44`, borderRadius: 12, padding: "12px 18px", flex: 1, minWidth: 120 }}>
+                      <div style={{ fontSize: 11, color: C.textDim, marginBottom: 4 }}>Gesamt</div>
+                      <div style={{ fontSize: 26, fontWeight: 800, color: C.accent }}>{totalKg.toFixed(1)} kg</div>
+                    </div>
+                    <div style={{ background: C.surfaceLight, borderRadius: 12, padding: "12px 18px", flex: 1, minWidth: 120 }}>
+                      <div style={{ fontSize: 11, color: C.textDim, marginBottom: 4 }}>Pro Volk (Ø)</div>
+                      <div style={{ fontSize: 22, fontWeight: 700, color: C.text }}>{voelker.length ? (totalKg / voelker.length).toFixed(1) : "–"} kg</div>
+                    </div>
+                    <div style={{ background: C.surfaceLight, borderRadius: 12, padding: "12px 18px", flex: 2, minWidth: 180 }}>
+                      <div style={{ fontSize: 11, color: C.textDim, marginBottom: 6 }}>Nach Tracht</div>
+                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                        {Object.entries(byTracht).map(([t, kg]) => {
+                          const tr = TRACHTEN.find(x => x.name === t);
+                          return <span key={t} style={{ fontSize: 12, fontWeight: 600, padding: "3px 8px", borderRadius: 8, background: tr ? `${tr.color}22` : C.surfaceLight, color: tr ? tr.color : C.text }}>{tr ? tr.emoji : "🍯"} {t}: {kg.toFixed(1)} kg</span>;
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Ernte-Formular */}
+                {showAddErnte && (
+                  <div style={{ background: C.surfaceLight, borderRadius: 12, padding: 14, marginBottom: 12, display: "flex", flexDirection: "column", gap: 8 }}>
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                      <div style={{ flex: 1, minWidth: 100 }}>
+                        <div style={{ fontSize: 10, color: C.textDim, marginBottom: 3 }}>Volk</div>
+                        <select value={ernteForm.volkId || ""} onChange={e => setErnteForm(p => ({...p, volkId: e.target.value ? Number(e.target.value) : null }))} style={{ width: "100%", border: `1px solid ${C.border}`, borderRadius: 8, padding: "7px 8px", fontSize: 13, background: C.surface, color: C.text, outline: "none" }}>
+                          <option value="">Alle Völker</option>
+                          {voelker.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+                        </select>
+                      </div>
+                      <div style={{ flex: 1, minWidth: 100 }}>
+                        <div style={{ fontSize: 10, color: C.textDim, marginBottom: 3 }}>Tracht</div>
+                        <select value={ernteForm.tracht} onChange={e => setErnteForm(p => ({...p, tracht: e.target.value }))} style={{ width: "100%", border: `1px solid ${C.border}`, borderRadius: 8, padding: "7px 8px", fontSize: 13, background: C.surface, color: C.text, outline: "none" }}>
+                          <option value="">Tracht wählen...</option>
+                          {TRACHTEN.map(t => <option key={t.name} value={t.name}>{t.emoji} {t.name}</option>)}
+                          <option value="Frühtracht">🌷 Frühtracht (Mix)</option>
+                          <option value="Sommertracht">☀️ Sommertracht (Mix)</option>
+                        </select>
+                      </div>
+                      <div style={{ width: 80 }}>
+                        <div style={{ fontSize: 10, color: C.textDim, marginBottom: 3 }}>Menge (kg)</div>
+                        <input type="number" step="0.1" min="0" value={ernteForm.kg} onChange={e => setErnteForm(p => ({...p, kg: e.target.value }))} placeholder="kg" style={{ width: "100%", border: `1px solid ${C.border}`, borderRadius: 8, padding: "7px 8px", fontSize: 13, background: C.surface, color: C.text, outline: "none" }} />
+                      </div>
+                      <div style={{ width: 120 }}>
+                        <div style={{ fontSize: 10, color: C.textDim, marginBottom: 3 }}>Datum</div>
+                        <input type="date" value={ernteForm.datum} onChange={e => setErnteForm(p => ({...p, datum: e.target.value }))} style={{ width: "100%", border: `1px solid ${C.border}`, borderRadius: 8, padding: "7px 8px", fontSize: 13, background: C.surface, color: C.text, outline: "none" }} />
+                      </div>
+                    </div>
+                    <div style={{ display: "flex", gap: 6 }}>
+                      <input value={ernteForm.notiz} onChange={e => setErnteForm(p => ({...p, notiz: e.target.value }))} placeholder="Notiz (optional)..." style={{ flex: 1, border: `1px solid ${C.border}`, borderRadius: 8, padding: "7px 10px", fontSize: 13, background: C.surface, color: C.text, outline: "none" }} />
+                      <button onClick={addErnte} disabled={!ernteForm.kg || parseFloat(ernteForm.kg) <= 0} style={{ background: C.accent, color: "#000", border: "none", borderRadius: 8, padding: "7px 18px", cursor: "pointer", fontWeight: 700, fontSize: 13, opacity: ernteForm.kg && parseFloat(ernteForm.kg) > 0 ? 1 : 0.4 }}>Speichern</button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Ernte-Liste */}
+                {thisYearErnten.length === 0 && !showAddErnte && (
+                  <div style={{ textAlign: "center", padding: "20px 0", color: C.textDim, fontSize: 13 }}>
+                    Noch keine Ernten für {thisYear} eingetragen. Starte mit dem Button oben!
+                  </div>
+                )}
+                {thisYearErnten.sort((a,b) => b.datum.localeCompare(a.datum)).map(e => {
+                  const v = voelker.find(vk => vk.id === e.volkId);
+                  const tr = TRACHTEN.find(t => t.name === e.tracht);
+                  return (
+                    <div key={e.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", background: C.surfaceLight, borderRadius: 8, marginBottom: 3, fontSize: 13 }}>
+                      <span style={{ fontSize: 16 }}>{tr ? tr.emoji : "🍯"}</span>
+                      <span style={{ fontWeight: 700, color: C.accent, minWidth: 50 }}>{e.kg} kg</span>
+                      <span style={{ color: C.text }}>{e.tracht || "–"}</span>
+                      {v && <span style={{ fontSize: 11, color: v.color, fontWeight: 600 }}>({v.name})</span>}
+                      <span style={{ fontSize: 11, color: C.textDim, marginLeft: "auto" }}>{e.datum}</span>
+                      {e.notiz && <span style={{ fontSize: 11, color: C.textDim }} title={e.notiz}>📝</span>}
+                      <button onClick={() => deleteErnte(e.id)} style={{ background: "none", border: "none", cursor: "pointer", color: C.textDim, fontSize: 16, padding: "0 4px" }}>×</button>
+                    </div>
+                  );
+                })}
+
+                {/* Jahresvergleich */}
+                {ernten.length > 0 && (() => {
+                  const years = [...new Set(ernten.map(e => e.datum?.substring(0,4)).filter(Boolean))].sort().reverse();
+                  if (years.length <= 1) return null;
+                  return (
+                    <div style={{ marginTop: 14 }}>
+                      <div style={sectionTitle}>Jahresvergleich</div>
+                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                        {years.map(y => {
+                          const yErnten = ernten.filter(e => e.datum?.startsWith(y));
+                          const yKg = yErnten.reduce((s, e) => s + (parseFloat(e.kg) || 0), 0);
+                          return (
+                            <div key={y} style={{ background: y === String(thisYear) ? C.accentGlow : C.surfaceLight, border: `1px solid ${y === String(thisYear) ? C.accent + "44" : C.border}`, borderRadius: 10, padding: "10px 16px", minWidth: 90, textAlign: "center" }}>
+                              <div style={{ fontSize: 13, fontWeight: 700, color: y === String(thisYear) ? C.accent : C.text }}>{y}</div>
+                              <div style={{ fontSize: 20, fontWeight: 800, color: C.text }}>{yKg.toFixed(1)}</div>
+                              <div style={{ fontSize: 10, color: C.textDim }}>kg gesamt</div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+
+              {/* Regionale Referenzwerte */}
+              <div style={{ ...card, marginBottom: 14, padding: 16 }}>
+                <h3 style={{ ...sectionTitle, margin: "0 0 4px" }}>📊 Richtwerte Raum Landsberg / Oberbayern</h3>
+                <p style={{ fontSize: 11, color: C.textDim, marginBottom: 12, lineHeight: 1.5 }}>Langjährige Erfahrungswerte für Honigertrag pro Volk. Stark abhängig von Witterung, Standort und Volksstärke — dienen als grobe Orientierung.</p>
+                <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                  {REF.map((r, i) => (
+                    <div key={i} style={{ background: C.surfaceLight, borderRadius: 10, padding: "10px 14px" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+                        <span style={{ fontSize: 14, fontWeight: 700 }}>{r.emoji} {r.tracht}</span>
+                        <span style={{ fontSize: 15, fontWeight: 800, color: C.accent }}>{r.kg} kg</span>
+                      </div>
+                      <div style={{ fontSize: 11, color: C.textDim, marginBottom: 2 }}>📅 {r.zeit}</div>
+                      <div style={{ fontSize: 12, color: C.textMuted, lineHeight: 1.4 }}>{r.hinweis}</div>
+                      {/* Vergleich mit eigener Ernte */}
+                      {byTracht[r.tracht] != null && (
+                        <div style={{ marginTop: 6, fontSize: 12, fontWeight: 600, color: C.accent, background: C.accentGlow, borderRadius: 6, padding: "3px 8px", display: "inline-block" }}>
+                          Deine Ernte: {byTracht[r.tracht].toFixed(1)} kg
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Live-Datenquellen */}
+              <div style={{ ...card, padding: 16 }}>
+                <h3 style={{ ...sectionTitle, margin: "0 0 4px" }}>🔗 Live-Daten & Stockwaagen in der Region</h3>
+                <p style={{ fontSize: 11, color: C.textDim, marginBottom: 12, lineHeight: 1.5 }}>Tagesaktuelle Stockwaagen-Daten und Trachtbeobachtungen — extern, da keine offene API verfügbar.</p>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  {LINKS.map((l, i) => (
+                    <a key={i} href={l.url} target="_blank" rel="noopener noreferrer" style={{
+                      background: C.surfaceLight, borderRadius: 10, padding: "12px 14px",
+                      textDecoration: "none", color: C.text,
+                      border: `1px solid ${C.border}`, display: "block",
+                      transition: "border-color 0.15s",
+                    }}
+                    onMouseEnter={e => e.currentTarget.style.borderColor = C.accent + '66'}
+                    onMouseLeave={e => e.currentTarget.style.borderColor = C.border}
+                    >
+                      <div style={{ fontSize: 14, fontWeight: 700, color: C.accent, marginBottom: 3 }}>{l.name} ↗</div>
+                      <div style={{ fontSize: 12, color: C.textMuted, lineHeight: 1.4 }}>{l.desc}</div>
+                    </a>
+                  ))}
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* ═══════════ KALENDER TAB ═══════════ */}
+        {activeTab === "kalender" && (
+          <div>
+            {/* Trachtband */}
+            <div style={{ ...card, padding: "16px 16px 20px", marginBottom: 12 }}>
+              <div style={{ ...sectionTitle, marginBottom: 12 }}>Trachtkalender {year}</div>
+              {/* Timeline bar with months */}
+              <div style={{ position: "relative", marginBottom: 20 }}>
+                {/* Month axis */}
+                <div style={{ display: "flex", marginBottom: 6 }}>
+                  {MONTHS.map((m, i) => <div key={i} style={{ flex: 1, fontSize: 10, color: C.textDim, textAlign: "center", fontWeight: 600 }}>{m}</div>)}
+                </div>
+                {/* Tracht bars — each on its own row */}
+                <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                  {TRACHTEN.map((t, i) => (
+                    <div key={i} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <div style={{ width: 95, fontSize: 12, fontWeight: 600, color: t.color, whiteSpace: "nowrap", flexShrink: 0, textAlign: "right" }}>
+                        {t.emoji} {t.name}
+                      </div>
+                      <div style={{ flex: 1, position: "relative", height: 14, background: C.surfaceLight, borderRadius: 7 }}>
+                        {(() => {
+                          const sp = ((t.start[0]*30+t.start[1])/365)*100;
+                          const ep = ((t.end[0]*30+t.end[1])/365)*100;
+                          return <div style={{ position: "absolute", left: `${sp}%`, width: `${ep-sp}%`, height: "100%", borderRadius: 7, background: t.color, opacity: 0.7 }} />;
+                        })()}
+                      </div>
+                    </div>
+                  ))}
+                  {/* Schwarmzeit row */}
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4 }}>
+                    <div style={{ width: 95, fontSize: 12, fontWeight: 700, color: C.danger, whiteSpace: "nowrap", flexShrink: 0, textAlign: "right" }}>
+                      ⚠️ Schwarmzeit
+                    </div>
+                    <div style={{ flex: 1, position: "relative", height: 14, background: C.surfaceLight, borderRadius: 7 }}>
+                      {(() => {
+                        const sp = ((SCHWARMZEIT.start[0]*30+SCHWARMZEIT.start[1])/365)*100;
+                        const ep = ((SCHWARMZEIT.end[0]*30+SCHWARMZEIT.end[1])/365)*100;
+                        return <div style={{ position: "absolute", left: `${sp}%`, width: `${ep-sp}%`, height: "100%", borderRadius: 7, background: "linear-gradient(90deg,#f97316,#ef4444)", opacity: 0.7 }} />;
+                      })()}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Navigation */}
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+              <button onClick={prevMonth} style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, width: 34, height: 34, cursor: "pointer", fontSize: 18, display: "flex", alignItems: "center", justifyContent: "center", color: C.textMuted }}>‹</button>
+              <h2 style={{ fontSize: 18, fontWeight: 700, margin: 0, flex: 1 }}>{MONTHS_FULL[month]} {year}</h2>
+              <button onClick={nextMonth} style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, width: 34, height: 34, cursor: "pointer", fontSize: 18, display: "flex", alignItems: "center", justifyContent: "center", color: C.textMuted }}>›</button>
+              <button onClick={() => { setMonth(TODAY.getMonth()); setYear(TODAY.getFullYear()); }} style={{ background: C.accent, color: "#000", border: "none", borderRadius: 8, padding: "6px 14px", cursor: "pointer", fontSize: 12, fontWeight: 700 }}>Heute</button>
+            </div>
+
+            {/* Grid */}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 3, marginBottom: 12 }}>
+              {WEEKDAYS.map(d => <div key={d} style={{ textAlign: "center", fontSize: 11, fontWeight: 700, color: C.textDim, padding: "6px 0", textTransform: "uppercase" }}>{d}</div>)}
+              {Array.from({ length: firstDay }, (_, i) => <div key={`e${i}`} style={{ minHeight: 68 }} />)}
+              {Array.from({ length: daysInMonth }, (_, i) => {
+                const day = i + 1, date = new Date(year, month, day), dateKey = fmt(date);
+                const schwarm = isSchwarmzeit(date), trachten = getTrachten(date);
+                const wetter = weather[dateKey], kontrolle = hasKontrolle(dateKey), notiz = hasNotiz(dateKey);
+                const past = date < new Date(TODAY.getFullYear(), TODAY.getMonth(), TODAY.getDate());
+                return (
+                  <div key={day} onClick={() => setSelectedDate(date)} style={{
+                    background: isSelected(day) ? C.accentGlow : schwarm ? C.schwarm : C.surface,
+                    borderRadius: 10, padding: "4px 5px", minHeight: 68, cursor: "pointer",
+                    border: isToday(day) ? `2px solid ${C.accent}` : isSelected(day) ? `2px solid ${C.accent}88` : `1.5px solid ${schwarm ? C.schwarmBorder+"44" : C.border}`,
+                    boxShadow: isToday(day) ? `0 0 12px ${C.accentGlow}` : "none",
+                    opacity: past ? 0.45 : 1, display: "flex", flexDirection: "column", gap: 1,
+                  }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: isToday(day) ? C.accent : C.text }}>{day}</div>
+                    <div style={{ display: "flex", gap: 2, fontSize: 10 }}>
+                      {schwarm && <span style={{ color: "#fb923c" }}>⚠</span>}
+                      {kontrolle && <span style={{ color: C.success, fontWeight: 700 }}>✓</span>}
+                      {notiz && <span>📝</span>}
+                    </div>
+                    {wetter && <div style={{ display: "flex", alignItems: "center", gap: 2, marginTop: "auto" }}><span style={{ fontSize: 11 }}>{wIcon(wetter.code)}</span><span style={{ fontSize: 10, color: C.textDim, fontWeight: 600 }}>{wetter.max}°</span></div>}
+                    {trachten.length > 0 && <div style={{ display: "flex", gap: 1 }}>{trachten.slice(0,2).map((t,j) => <span key={j} style={{ fontSize: 9, background: `${t.color}33`, borderRadius: 4, padding: "0 2px", lineHeight: "14px" }}>{t.emoji}</span>)}</div>}
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Day Detail */}
+            {selectedDate && (
+              <div style={{ ...card, borderRadius: 16, padding: 20, boxShadow: "0 4px 24px rgba(0,0,0,0.3)", marginBottom: 16 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+                  <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: C.accent }}>{selectedDate.getDate()}. {MONTHS_FULL[selectedDate.getMonth()]} {selectedDate.getFullYear()}</h3>
+                  <button onClick={() => setSelectedDate(null)} style={{ background: "none", border: "none", fontSize: 22, cursor: "pointer", color: C.textDim }}>×</button>
+                </div>
+
+                {selectedWeather && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "12px 16px", background: C.surfaceLight, borderRadius: 12, marginBottom: 12, flexWrap: "wrap" }}>
+                    <span style={{ fontSize: 30 }}>{wIcon(selectedWeather.code)}</span>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 12, color: C.textMuted, marginBottom: 2 }}>{wLabel(selectedWeather.code)}</div>
+                      <div style={{ display: "flex", gap: 8, alignItems: "baseline" }}>
+                        <span style={{ fontSize: 24, fontWeight: 800 }}>{selectedWeather.max}°</span>
+                        <span style={{ fontSize: 15, color: C.textDim }}>{selectedWeather.min}°</span>
+                      </div>
+                    </div>
+                    <div style={{ display: "flex", gap: 12, fontSize: 12, color: C.textMuted, flexWrap: "wrap" }}>
+                      <span>💧 {selectedWeather.rain}mm ({selectedWeather.rainProb}%)</span>
+                      <span>💨 {selectedWeather.wind} km/h</span>
+                      <span>☀️ UV {selectedWeather.uv}</span>
+                    </div>
+                    {(() => { const sl = beeScoreLabel(beeScore(selectedWeather)); return (
+                      <div style={{ background: `${sl.color}22`, border: `1px solid ${sl.color}44`, borderRadius: 8, padding: "4px 12px", fontSize: 12, fontWeight: 700, color: sl.color }}>{sl.emoji} {sl.text} für Bienen</div>
+                    ); })()}
+                  </div>
+                )}
+
+                {isSchwarmzeit(selectedDate) && (
+                  <div style={{ background: C.dangerDim, border: `1px solid ${C.danger}33`, borderRadius: 10, padding: "10px 14px", fontSize: 13, marginBottom: 12, color: "#fca5a5", lineHeight: 1.5 }}>
+                    ⚠️ <strong>Schwarmzeit!</strong> Weiselzellen kontrollieren, Drohnenbrut schneiden, Völker nicht zu eng halten.
+                  </div>
+                )}
+
+                {selectedTrachten.length > 0 && (
+                  <div style={{ marginBottom: 12 }}>
+                    <div style={sectionTitle}>Aktive Tracht</div>
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                      {selectedTrachten.map((t,i) => <span key={i} style={{ padding: "4px 10px", borderRadius: 12, fontSize: 12, fontWeight: 600, border: `1px solid ${t.color}66`, background: `${t.color}22`, color: t.color }}>{t.emoji} {t.name}</span>)}
+                    </div>
+                  </div>
+                )}
+
+                <div style={{ marginBottom: 14 }}>
+                  <div style={sectionTitle}>Schwarmkontrolle</div>
+                  {voelker.map(v => (
+                    <div key={v.id} onClick={() => toggleKontrolle(selectedDateKey, v.id)} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderRadius: 8, cursor: "pointer", marginBottom: 3, background: C.surfaceLight }}>
+                      <span style={{ width: 10, height: 10, borderRadius: "50%", background: v.color, flexShrink: 0 }} />
+                      <span style={{ fontSize: 13, fontWeight: 600, flex: 1 }}>{v.name}</span>
+                      <span style={{ fontSize: 12, fontWeight: 600, padding: "2px 10px", borderRadius: 12, ...(kontrollen[selectedDateKey]?.[v.id] ? { color: C.success, background: C.successDim } : { color: C.textDim, background: `${C.textDim}22` }) }}>
+                        {kontrollen[selectedDateKey]?.[v.id] ? "✓ Erledigt" : "○ Offen"}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+
+                <div>
+                  <div style={sectionTitle}>Durchsicht-Notizen</div>
+                  {selectedNotizen.map((n, i) => {
+                    const v = voelker.find(vk => vk.id === n.volkId);
+                    return (
+                      <div key={i} style={{ display: "flex", alignItems: "center", padding: "6px 10px", background: C.surfaceLight, borderRadius: 8, marginBottom: 4, fontSize: 13 }}>
+                        {v && <span style={{ width: 8, height: 8, borderRadius: "50%", background: v.color, marginRight: 6, flexShrink: 0 }} />}
+                        {v && <span style={{ fontSize: 12, color: v.color, marginRight: 6, fontWeight: 600 }}>{v.name}</span>}
+                        <span style={{ flex: 1 }}>{n.text}</span>
+                        <button onClick={() => deleteNote(selectedDateKey, i)} style={{ background: "none", border: "none", cursor: "pointer", color: C.textDim, fontSize: 16, padding: "0 4px" }}>×</button>
+                      </div>
+                    );
+                  })}
+                  <div style={{ display: "flex", gap: 4, marginTop: 8 }}>
+                    <select value={noteVolk || ""} onChange={e => setNoteVolk(e.target.value ? Number(e.target.value) : null)} style={{ border: `1.5px solid ${C.border}`, borderRadius: 8, padding: "6px 8px", fontSize: 12, background: C.surfaceLight, color: C.textMuted, outline: "none" }}>
+                      <option value="">Alle</option>
+                      {voelker.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+                    </select>
+                    <input value={noteText} onChange={e => setNoteText(e.target.value)} placeholder="Notiz..." style={{ flex: 1, border: `1.5px solid ${C.border}`, borderRadius: 8, padding: "6px 10px", fontSize: 13, outline: "none", background: C.surfaceLight, color: C.text }} onKeyDown={e => e.key === 'Enter' && saveNote()} />
+                    <button onClick={saveNote} disabled={!noteText.trim()} style={{ background: C.accent, color: "#000", border: "none", borderRadius: 8, padding: "6px 14px", cursor: "pointer", fontWeight: 700, fontSize: 16, opacity: noteText.trim() ? 1 : 0.4 }}>+</button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 14, padding: "10px 0", fontSize: 11, color: C.textDim }}>
+              <span style={{ display: "flex", alignItems: "center", gap: 4 }}><span style={{ width: 12, height: 12, borderRadius: 4, background: C.schwarm, border: `1px solid ${C.schwarmBorder}44` }} /> Schwarmzeit</span>
+              <span style={{ display: "flex", alignItems: "center", gap: 4 }}><span style={{ color: C.success, fontWeight: 700 }}>✓</span> Kontrolle</span>
+              <span style={{ display: "flex", alignItems: "center", gap: 4 }}>📝 Notiz</span>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(React.createElement(SchwarmzeitKalender));
+setTimeout(function() { var s = document.getElementById('splash'); if (s) s.classList.add('hide'); setTimeout(function() { if (s) s.remove(); }, 500); }, 800);
+</script>
+</body>
+</html>
