@@ -1,0 +1,778 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>🐝 Bienen-Flucht — Realistische Edition</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    overflow: hidden; touch-action: none; user-select: none; -webkit-user-select: none;
+    background: #1a1a2e; height: 100vh; width: 100vw;
+    font-family: 'Segoe UI', system-ui, sans-serif;
+  }
+  canvas { display: block; }
+  .screen {
+    position: fixed; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; z-index: 10;
+    transition: opacity 0.5s ease;
+  }
+  .screen.hidden { opacity: 0; pointer-events: none; }
+  #startScreen {
+    background: linear-gradient(180deg, #5a8a3c 0%, #3d6b2e 40%, #2d5a1e 100%);
+  }
+  #startScreen::before {
+    content: ''; position: absolute; inset: 0;
+    background: radial-gradient(ellipse at 30% 20%, rgba(255,255,200,0.15) 0%, transparent 60%),
+                radial-gradient(ellipse at 70% 80%, rgba(0,0,0,0.2) 0%, transparent 50%);
+  }
+  .title {
+    font-size: clamp(2.2rem, 8vw, 4rem); font-weight: 900;
+    color: #FFD54F;
+    text-shadow: 0 3px 0 #8B6914, 0 0 30px rgba(255,213,79,0.3);
+    margin-bottom: 0.15em; letter-spacing: 1px; position: relative; z-index: 1;
+  }
+  .subtitle {
+    font-size: clamp(0.85rem, 2.8vw, 1.15rem); font-weight: 400;
+    color: rgba(255,255,255,0.7); margin-bottom: 2em; position: relative; z-index: 1;
+    text-align: center; padding: 0 1em;
+  }
+  .big-bee {
+    font-size: clamp(3.5rem, 13vw, 7rem);
+    filter: drop-shadow(0 8px 16px rgba(0,0,0,0.35));
+    margin-bottom: 0.4em; position: relative; z-index: 1;
+    animation: gentleFly 4s ease-in-out infinite;
+  }
+  @keyframes gentleFly {
+    0%, 100% { transform: translate(0, 0) rotate(-2deg); }
+    30% { transform: translate(5px, -12px) rotate(1deg); }
+    60% { transform: translate(-4px, -6px) rotate(-1deg); }
+  }
+  .btn {
+    font-size: clamp(1.1rem, 3.5vw, 1.4rem); font-weight: 800;
+    padding: 0.65em 2em; border: none; border-radius: 50px;
+    cursor: pointer; letter-spacing: 1px; position: relative; z-index: 1;
+    transition: all 0.15s ease;
+  }
+  .btn-play {
+    background: linear-gradient(135deg, #FFD54F, #F9A825); color: #4E342E;
+    box-shadow: 0 5px 0 #c68400, 0 8px 20px rgba(0,0,0,0.3);
+  }
+  .btn-play:hover { transform: translateY(-2px); }
+  .btn-play:active { transform: translateY(3px); box-shadow: 0 2px 0 #c68400; }
+  .hint {
+    font-size: clamp(0.7rem, 2vw, 0.85rem);
+    color: rgba(255,255,255,0.4); margin-top: 1.2em; position: relative; z-index: 1;
+  }
+  #gameOverScreen { background: rgba(10, 10, 20, 0.8); backdrop-filter: blur(10px); }
+  .go-title {
+    font-size: clamp(1.8rem, 6.5vw, 3rem); font-weight: 900;
+    color: #ff6b6b; margin-bottom: 0.3em;
+    text-shadow: 0 0 25px rgba(255,107,107,0.4);
+  }
+  .go-score { font-size: clamp(1rem, 3.2vw, 1.3rem); color: #FFD54F; margin-bottom: 0.2em; }
+  .go-best { font-size: clamp(0.8rem, 2.3vw, 0.95rem); color: rgba(255,255,255,0.4); margin-bottom: 0.4em; }
+  .go-biome { font-size: clamp(0.75rem, 2.2vw, 0.9rem); color: rgba(255,255,255,0.3); margin-bottom: 1.5em; text-align:center; padding:0 1em; }
+  #hud {
+    position: fixed; top: 0; left: 0; right: 0;
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 10px 16px; z-index: 5; pointer-events: none;
+  }
+  .hud-item {
+    font-weight: 600; font-size: clamp(0.85rem, 3vw, 1.15rem);
+    color: #fff; text-shadow: 0 1px 4px rgba(0,0,0,0.6);
+    display: flex; align-items: center; gap: 5px;
+  }
+  .hud-center {
+    position: absolute; left: 50%; transform: translateX(-50%);
+    font-size: clamp(0.7rem, 2.2vw, 0.85rem); color: rgba(255,255,255,0.6);
+  }
+  .hearts { display: flex; gap: 3px; }
+  .heart { font-size: clamp(1rem, 3.5vw, 1.3rem); transition: all 0.3s ease; }
+  .heart.lost { opacity: 0.15; transform: scale(0.7); }
+  .combo-popup {
+    position: fixed; font-weight: 700; font-size: 1.1rem; color: #FFD54F;
+    text-shadow: 0 2px 6px rgba(0,0,0,0.6); pointer-events: none; z-index: 6;
+    animation: comboUp 1.2s ease-out forwards;
+  }
+  @keyframes comboUp {
+    0% { opacity: 1; transform: translateY(0) scale(1); }
+    100% { opacity: 0; transform: translateY(-50px) scale(1.2); }
+  }
+  .biome-label {
+    position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    font-size: clamp(1.5rem, 5vw, 2.5rem); font-weight: 900;
+    color: rgba(255,255,255,0.85); text-shadow: 0 2px 12px rgba(0,0,0,0.5);
+    pointer-events: none; z-index: 6; animation: biomeFade 2.5s ease forwards;
+    text-align: center;
+  }
+  @keyframes biomeFade {
+    0% { opacity: 0; transform: translate(-50%, -50%) scale(0.8); }
+    15% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+    70% { opacity: 1; }
+    100% { opacity: 0; transform: translate(-50%, -50%) translateY(-20px); }
+  }
+  .shake { animation: shake 0.35s ease; }
+  @keyframes shake {
+    0%, 100% { transform: translate(0); }
+    20% { transform: translate(-5px, 3px); }
+    40% { transform: translate(4px, -3px); }
+    60% { transform: translate(-3px, 4px); }
+    80% { transform: translate(3px, -2px); }
+  }
+</style>
+</head>
+<body>
+<div class="screen" id="startScreen">
+  <div class="big-bee">🐝</div>
+  <div class="title">Bienen-Flucht</div>
+  <div class="subtitle">Weiche den Hornissen aus — sammle Nektar<br>Von der Obstblüte bis ins Weltall!</div>
+  <button class="btn btn-play" id="btnStart">Starten</button>
+  <div class="hint">Maus / Touch zum Steuern</div>
+</div>
+<div class="screen hidden" id="gameOverScreen">
+  <div class="go-title">Erwischt!</div>
+  <div class="go-score" id="finalScore">0</div>
+  <div class="go-best" id="bestScore">Bester: 0</div>
+  <div class="go-biome" id="biomesVisited"></div>
+  <button class="btn btn-play" id="btnRestart">Nochmal</button>
+</div>
+<div id="hud" style="display:none">
+  <div class="hud-item">🍯 <span id="scoreDisplay">0</span></div>
+  <div class="hud-item hud-center" id="biomeHud"></div>
+  <div class="hud-item"><div class="hearts" id="heartsDisplay"></div></div>
+</div>
+<canvas id="game"></canvas>
+<script>
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+let W, H;
+function resize() { W = canvas.width = innerWidth; H = canvas.height = innerHeight; }
+resize(); addEventListener('resize', () => { resize(); if(playing) generateScene(); });
+
+// stable fuzz
+let fuzzSeed = 1;
+function srand() { fuzzSeed=(fuzzSeed*16807)%2147483647; return fuzzSeed/2147483647; }
+
+// ===== BIOME PROGRESSION =====
+// Score thresholds for each biome transition
+const BIOME_LIST = [
+  { key:'orchard',   at:0,   name:'Obstblüte',     emoji:'🌸', skyTop:'#87CEEB', skyMid:'#C8E6C9', fog:'rgba(255,255,240,0.08)', ground:['#5B8A3C','#6E9F4E','#4A7A35'], treeType:'fruit', floor:'petals', ambient:'bright' },
+  { key:'field',     at:25,  name:'Blumenwiese',    emoji:'🌻', skyTop:'#78B4D0', skyMid:'#D4E8B0', fog:'rgba(255,255,200,0.1)',  ground:['#7BA05B','#8CB860','#6E9F4E'], treeType:null,    floor:'flowers', ambient:'golden' },
+  { key:'forest',    at:55,  name:'Wald',           emoji:'🌲', skyTop:'#6EA4BF', skyMid:'#A8CCD7', fog:'rgba(180,210,190,0.12)', ground:['#3B5E2B','#4A7A35','#2D4A20'], treeType:'pine',  floor:'mushrooms', ambient:'dark' },
+  { key:'mountain',  at:90,  name:'Alpen',          emoji:'🏔️', skyTop:'#5B8FBF', skyMid:'#9BB8D0', fog:'rgba(200,220,240,0.15)', ground:['#6B7B6B','#8A9A85','#556B55'], treeType:'pine_s', floor:'rocks', ambient:'cold' },
+  { key:'coast',     at:130, name:'Küste',          emoji:'🏖️', skyTop:'#4EADCF', skyMid:'#87CEEB', fog:'rgba(200,230,255,0.08)', ground:['#C2B280','#D4C998','#E8DEB5'], treeType:'palm',  floor:'shells', ambient:'bright' },
+  { key:'ocean',     at:175, name:'Ozean',          emoji:'🌊', skyTop:'#2980B9', skyMid:'#1A5276', fog:'rgba(0,50,100,0.1)',     ground:['#1A6B8A','#1E7FA0','#145A75'], treeType:null,    floor:'bubbles', ambient:'deep' },
+  { key:'volcano',   at:225, name:'Vulkaninsel',    emoji:'🌋', skyTop:'#4A2020', skyMid:'#8B3A3A', fog:'rgba(255,100,50,0.08)',  ground:['#3D2B1F','#5C3D2E','#2A1A10'], treeType:null,    floor:'embers', ambient:'hot' },
+  { key:'aurora',    at:280, name:'Nordlicht',      emoji:'🌌', skyTop:'#0B1628', skyMid:'#1A2744', fog:'rgba(100,200,150,0.06)', ground:['#E8E8F0','#D0D0E0','#C0C8D8'], treeType:null,    floor:'snowflakes', ambient:'aurora' },
+  { key:'space',     at:340, name:'Weltraum',       emoji:'🚀', skyTop:'#050510', skyMid:'#0A0A20', fog:'rgba(100,50,200,0.04)',  ground:['#1A1A2E','#15152A','#0F0F20'], treeType:null,    floor:'stars_floor', ambient:'space' },
+  { key:'blackhole', at:420, name:'Schwarzes Loch', emoji:'🕳️', skyTop:'#000005', skyMid:'#050008', fog:'rgba(80,0,120,0.06)',    ground:['#0A0010','#080008','#050005'], treeType:null,    floor:'void', ambient:'void' },
+];
+
+let biomeIndex = 0, biome = BIOME_LIST[0];
+let biomesVisitedSet = new Set();
+let trees = [], floorDetails = [], clouds = [];
+let starField = []; // for space biomes
+
+function getCurrentBiome(sc) {
+  let b = BIOME_LIST[0];
+  for (let i = BIOME_LIST.length-1; i >= 0; i--) {
+    if (sc >= BIOME_LIST[i].at) { b = BIOME_LIST[i]; break; }
+  }
+  return b;
+}
+
+function generateScene() {
+  trees=[]; floorDetails=[]; clouds=[];
+  // clouds (not in space/void)
+  if (!['space','blackhole'].includes(biome.key)) {
+    const nc = biome.key==='ocean' ? 3 : 5;
+    for (let i=0;i<nc;i++) clouds.push({
+      x:Math.random()*W*1.5-W*0.25, y:20+Math.random()*H*0.2,
+      w:50+Math.random()*100, h:18+Math.random()*25,
+      speed:0.15+Math.random()*0.3, alpha:0.25+Math.random()*0.35
+    });
+  }
+  // trees
+  if (biome.treeType) {
+    const n = biome.treeType==='palm' ? 6 : (biome.treeType==='pine_s' ? 5 : (biome.treeType==='pine' ? 12 : 8));
+    for (let i=0;i<n;i++) trees.push({
+      x:Math.random()*W, layer:Math.random(), size:0.6+Math.random()*0.6, fruitSeed:Math.random()
+    });
+    trees.sort((a,b)=>a.layer-b.layer);
+  }
+  // floor details
+  const fc = biome.floor==='flowers' ? 40 : (['stars_floor','void','bubbles','embers','snowflakes'].includes(biome.floor) ? 50 : 20);
+  for (let i=0;i<fc;i++) floorDetails.push({
+    x:Math.random()*W,
+    y: biome.floor==='bubbles' ? Math.random()*H : (biome.floor==='stars_floor'||biome.floor==='void' ? Math.random()*H : H*0.78+Math.random()*H*0.2),
+    size:3+Math.random()*8, variant:Math.floor(Math.random()*5),
+    phase:Math.random()*Math.PI*2, vy:-0.5-Math.random()*1.5
+  });
+  // star field for space biomes
+  if (['space','blackhole','aurora'].includes(biome.key)) {
+    starField = [];
+    for (let i=0;i<120;i++) starField.push({
+      x:Math.random()*W, y:Math.random()*H,
+      size:0.5+Math.random()*2, twinkle:Math.random()*Math.PI*2,
+      speed:Math.random()*0.3
+    });
+  }
+}
+
+// ===== BACKGROUND DRAWING =====
+function drawSky() {
+  const g = ctx.createLinearGradient(0,0,0,H*0.7);
+  g.addColorStop(0, biome.skyTop); g.addColorStop(1, biome.skyMid);
+  ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
+  if (biome.ambient==='golden') {
+    ctx.globalAlpha=0.15;
+    const sg=ctx.createRadialGradient(W*0.8,H*0.08,10,W*0.8,H*0.08,H*0.5);
+    sg.addColorStop(0,'#FFE082'); sg.addColorStop(1,'transparent');
+    ctx.fillStyle=sg; ctx.fillRect(0,0,W,H); ctx.globalAlpha=1;
+  } else if (biome.ambient==='dark') {
+    ctx.globalAlpha=0.08; ctx.fillStyle='#000'; ctx.fillRect(0,0,W,H); ctx.globalAlpha=1;
+  } else if (biome.ambient==='hot') {
+    ctx.globalAlpha=0.1;
+    const sg=ctx.createRadialGradient(W*0.5,H*0.85,10,W*0.5,H*0.85,H*0.7);
+    sg.addColorStop(0,'#FF4500'); sg.addColorStop(1,'transparent');
+    ctx.fillStyle=sg; ctx.fillRect(0,0,W,H); ctx.globalAlpha=1;
+  } else if (biome.ambient==='aurora') {
+    // northern lights
+    const t = performance.now()*0.0005;
+    for (let i=0;i<3;i++) {
+      ctx.globalAlpha=0.06;
+      const hue = (t*40+i*60)%360;
+      ctx.fillStyle=`hsl(${hue},70%,50%)`;
+      ctx.beginPath();
+      ctx.moveTo(0, H*0.15+Math.sin(t+i)*H*0.1);
+      for (let x=0;x<=W;x+=30) {
+        ctx.lineTo(x, H*0.15+Math.sin(t+x*0.003+i*2)*H*0.12+Math.sin(t*1.5+x*0.007)*H*0.05);
+      }
+      ctx.lineTo(W,0); ctx.lineTo(0,0); ctx.fill();
+    }
+    ctx.globalAlpha=1;
+  } else if (biome.ambient==='space'||biome.ambient==='void') {
+    // stars
+    const t=performance.now()*0.001;
+    starField.forEach(s => {
+      ctx.globalAlpha=0.4+Math.sin(t+s.twinkle)*0.4;
+      ctx.fillStyle='#fff';
+      ctx.beginPath(); ctx.arc(s.x,s.y,s.size,0,Math.PI*2); ctx.fill();
+    });
+    ctx.globalAlpha=1;
+    if (biome.ambient==='void') {
+      // black hole gravity distortion
+      const sg=ctx.createRadialGradient(W*0.5,H*0.4,20,W*0.5,H*0.4,H*0.6);
+      sg.addColorStop(0,'rgba(40,0,60,0.3)');
+      sg.addColorStop(0.3,'rgba(80,0,120,0.15)');
+      sg.addColorStop(0.6,'rgba(150,50,200,0.05)');
+      sg.addColorStop(1,'transparent');
+      ctx.fillStyle=sg; ctx.fillRect(0,0,W,H);
+      // accretion disk
+      ctx.globalAlpha=0.15;
+      ctx.strokeStyle='#FF6F00';
+      ctx.lineWidth=3;
+      const at=performance.now()*0.001;
+      ctx.beginPath();
+      ctx.ellipse(W*0.5,H*0.4,H*0.25+Math.sin(at)*10,H*0.08,at*0.2,0,Math.PI*2);
+      ctx.stroke();
+      ctx.strokeStyle='#E040FB';
+      ctx.beginPath();
+      ctx.ellipse(W*0.5,H*0.4,H*0.2+Math.cos(at*1.3)*8,H*0.06,at*0.15+1,0,Math.PI*2);
+      ctx.stroke();
+      ctx.globalAlpha=1;
+    }
+  } else if (biome.ambient==='deep') {
+    // underwater light rays
+    const t=performance.now()*0.0003;
+    for (let i=0;i<5;i++) {
+      ctx.globalAlpha=0.04;
+      ctx.fillStyle='#87CEEB';
+      const rx=W*(0.1+i*0.2)+Math.sin(t+i)*30;
+      ctx.beginPath(); ctx.moveTo(rx-15,0); ctx.lineTo(rx+15,0);
+      ctx.lineTo(rx+60+Math.sin(t*2+i)*20,H); ctx.lineTo(rx-60-Math.sin(t*2+i)*20,H);
+      ctx.fill();
+    }
+    ctx.globalAlpha=1;
+  } else if (biome.ambient==='cold') {
+    // mountain peaks in background
+    ctx.fillStyle='#8898A8'; ctx.globalAlpha=0.3;
+    ctx.beginPath(); ctx.moveTo(0,H*0.45);
+    ctx.lineTo(W*0.15,H*0.2); ctx.lineTo(W*0.3,H*0.38);
+    ctx.lineTo(W*0.5,H*0.15); ctx.lineTo(W*0.65,H*0.32);
+    ctx.lineTo(W*0.8,H*0.18); ctx.lineTo(W,H*0.4);
+    ctx.lineTo(W,H*0.5); ctx.lineTo(0,H*0.5); ctx.fill();
+    // snow caps
+    ctx.fillStyle='#fff'; ctx.globalAlpha=0.25;
+    ctx.beginPath(); ctx.moveTo(W*0.12,H*0.22); ctx.lineTo(W*0.15,H*0.2); ctx.lineTo(W*0.18,H*0.23); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(W*0.47,H*0.17); ctx.lineTo(W*0.5,H*0.15); ctx.lineTo(W*0.53,H*0.18); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(W*0.77,H*0.2); ctx.lineTo(W*0.8,H*0.18); ctx.lineTo(W*0.83,H*0.21); ctx.fill();
+    ctx.globalAlpha=1;
+  }
+}
+
+function drawClouds() {
+  clouds.forEach(c => {
+    ctx.globalAlpha=c.alpha; ctx.fillStyle='#fff';
+    ctx.beginPath(); ctx.ellipse(c.x,c.y,c.w,c.h,0,0,Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(c.x-c.w*0.4,c.y+c.h*0.3,c.w*0.55,c.h*0.65,0,0,Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(c.x+c.w*0.35,c.y+c.h*0.15,c.w*0.5,c.h*0.55,0,0,Math.PI*2); ctx.fill();
+    ctx.globalAlpha=1;
+  });
+}
+
+function drawGround() {
+  const gy=H*0.72;
+  if (biome.key==='ocean') {
+    // waves
+    const t=performance.now()*0.001;
+    biome.ground.forEach((col,i) => {
+      const yOff=gy+i*(H*0.1);
+      ctx.fillStyle=col; ctx.beginPath(); ctx.moveTo(0,yOff);
+      for (let x=0;x<=W;x+=15) ctx.lineTo(x, yOff+Math.sin(x*0.01+t+i*1.5)*12+Math.sin(x*0.025+t*1.8)*6);
+      ctx.lineTo(W,H); ctx.lineTo(0,H); ctx.fill();
+    });
+  } else {
+    biome.ground.forEach((col,i) => {
+      const yOff=gy+i*(H*0.1);
+      ctx.fillStyle=col; ctx.beginPath(); ctx.moveTo(0,yOff);
+      for (let x=0;x<=W;x+=20) ctx.lineTo(x, yOff+Math.sin(x*0.005+i*2)*15+Math.sin(x*0.012+i)*8);
+      ctx.lineTo(W,H); ctx.lineTo(0,H); ctx.fill();
+    });
+  }
+}
+
+function drawPine(x,baseY,sz,small) {
+  const h=(small?60:100)*sz, w=(small?22:35)*sz;
+  ctx.fillStyle='#5D4037'; ctx.fillRect(x-4*sz,baseY-8*sz,8*sz,20*sz);
+  const layers=small?3:4;
+  for (let i=0;i<layers;i++) {
+    const ly=baseY-15*sz-i*h*0.22, lw=w*(1-i*0.2), d=i*15;
+    ctx.fillStyle=`rgb(${45-d},${80-d},${35-d})`;
+    ctx.beginPath(); ctx.moveTo(x,ly-h*0.28); ctx.lineTo(x-lw,ly); ctx.lineTo(x+lw,ly); ctx.fill();
+  }
+}
+
+function drawFruitTree(x,baseY,sz,seed) {
+  const h=70*sz, cx=x, cy=baseY-h*0.5, r=30*sz;
+  ctx.fillStyle='#6D4C41'; ctx.fillRect(x-5*sz,baseY-10*sz,10*sz,25*sz);
+  ctx.fillStyle='#558B2F'; ctx.beginPath(); ctx.arc(cx,cy,r,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='#689F38';
+  ctx.beginPath(); ctx.arc(cx-r*0.5,cy-r*0.2,r*0.7,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(cx+r*0.4,cy+r*0.1,r*0.65,0,Math.PI*2); ctx.fill();
+  // blossoms
+  ctx.fillStyle='#FFB7C5';
+  [[0.35,-0.35],[-0.3,0.15],[0.05,0.4],[-0.45,-0.25],[0.4,0.1]].forEach(([fx,fy],i) => {
+    ctx.beginPath(); ctx.arc(cx+fx*r,cy+fy*r,3*sz,0,Math.PI*2); ctx.fill();
+  });
+}
+
+function drawPalm(x,baseY,sz) {
+  const h=80*sz;
+  // trunk (curved)
+  ctx.strokeStyle='#8D6E63'; ctx.lineWidth=6*sz; ctx.lineCap='round';
+  ctx.beginPath(); ctx.moveTo(x,baseY);
+  ctx.quadraticCurveTo(x+10*sz,baseY-h*0.5,x+5*sz,baseY-h); ctx.stroke();
+  // fronds
+  const tx=x+5*sz, ty=baseY-h;
+  for (let i=0;i<6;i++) {
+    const a=-Math.PI*0.8+i*Math.PI*0.32;
+    const len=30*sz+Math.sin(i*2.1)*10*sz;
+    ctx.strokeStyle=i%2===0?'#2E7D32':'#388E3C'; ctx.lineWidth=2.5*sz;
+    ctx.beginPath(); ctx.moveTo(tx,ty);
+    ctx.quadraticCurveTo(tx+Math.cos(a)*len*0.6,ty+Math.sin(a)*len*0.3,tx+Math.cos(a)*len,ty+Math.sin(a)*len*0.8);
+    ctx.stroke();
+  }
+  // coconuts
+  ctx.fillStyle='#5D4037';
+  ctx.beginPath(); ctx.arc(tx+2*sz,ty+4*sz,3*sz,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(tx-3*sz,ty+5*sz,2.5*sz,0,Math.PI*2); ctx.fill();
+}
+
+function drawTrees() {
+  if (!biome.treeType) return;
+  trees.forEach(t => {
+    const baseY=H*0.72+Math.sin(t.x*0.005+(t.layer<0.5?0:2))*15;
+    const a=0.4+t.layer*0.6, p=0.4+t.layer*0.6;
+    ctx.globalAlpha=a;
+    if (biome.treeType==='pine') drawPine(t.x,baseY-(1-t.layer)*40,t.size*p,false);
+    else if (biome.treeType==='pine_s') drawPine(t.x,baseY-(1-t.layer)*40,t.size*p*0.7,true);
+    else if (biome.treeType==='fruit') drawFruitTree(t.x,baseY-(1-t.layer)*40,t.size*p,t.fruitSeed);
+    else if (biome.treeType==='palm') drawPalm(t.x,baseY-(1-t.layer)*30,t.size*p);
+    ctx.globalAlpha=1;
+  });
+}
+
+function drawFloor(time) {
+  const t=time||performance.now();
+  floorDetails.forEach(fd => {
+    ctx.save(); ctx.translate(fd.x, fd.y);
+    if (biome.floor==='flowers') {
+      ctx.translate(Math.sin(t*0.002+fd.phase)*3,0);
+      ctx.strokeStyle='#558B2F'; ctx.lineWidth=1.5;
+      ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(0,-fd.size*2); ctx.stroke();
+      const cols=['#E91E63','#FF9800','#FFD54F','#9C27B0','#2196F3'];
+      ctx.fillStyle=cols[fd.variant];
+      for (let p=0;p<5;p++) { const a=(p/5)*Math.PI*2;
+        ctx.beginPath(); ctx.ellipse(Math.cos(a)*fd.size*0.5,-fd.size*2+Math.sin(a)*fd.size*0.5,fd.size*0.35,fd.size*0.2,a,0,Math.PI*2); ctx.fill();
+      }
+      ctx.fillStyle='#FFF176'; ctx.beginPath(); ctx.arc(0,-fd.size*2,fd.size*0.2,0,Math.PI*2); ctx.fill();
+    } else if (biome.floor==='mushrooms') {
+      const cols=['#D32F2F','#F57C00','#FFF176','#8D6E63','#BCAAA4'];
+      ctx.fillStyle='#E8D5B7'; ctx.fillRect(-fd.size*0.15,-fd.size*0.3,fd.size*0.3,fd.size*0.5);
+      ctx.fillStyle=cols[fd.variant];
+      ctx.beginPath(); ctx.ellipse(0,-fd.size*0.3,fd.size*0.5,fd.size*0.35,0,Math.PI,Math.PI*2); ctx.fill();
+    } else if (biome.floor==='petals') {
+      ctx.globalAlpha=0.5+Math.sin(t*0.001+fd.phase)*0.2;
+      ctx.fillStyle=['#FFCDD2','#F8BBD0','#fff','#FFE0B2','#FFC1E3'][fd.variant];
+      ctx.beginPath(); ctx.ellipse(0,0,fd.size*0.6,fd.size*0.3,fd.phase,0,Math.PI*2); ctx.fill();
+    } else if (biome.floor==='rocks') {
+      ctx.fillStyle=['#8B8B8B','#A0A0A0','#787878','#6E6E6E','#959595'][fd.variant];
+      ctx.beginPath(); ctx.ellipse(0,0,fd.size*0.5,fd.size*0.35,fd.phase,0,Math.PI*2); ctx.fill();
+    } else if (biome.floor==='shells') {
+      ctx.fillStyle=['#FFF8E1','#FFE0B2','#FFCCBC','#F0E4D7','#D7CCC8'][fd.variant];
+      ctx.beginPath();
+      ctx.moveTo(0,-fd.size*0.3);
+      for (let p=0;p<8;p++) { const a=(p/8)*Math.PI*2; ctx.lineTo(Math.cos(a)*fd.size*0.4*(0.7+0.3*Math.sin(p*3)),Math.sin(a)*fd.size*0.3); }
+      ctx.fill();
+    } else if (biome.floor==='bubbles') {
+      ctx.globalAlpha=0.2+Math.sin(t*0.002+fd.phase)*0.15;
+      ctx.strokeStyle='rgba(255,255,255,0.5)'; ctx.lineWidth=1;
+      ctx.beginPath(); ctx.arc(0,0,fd.size*0.5,0,Math.PI*2); ctx.stroke();
+      ctx.fillStyle='rgba(255,255,255,0.1)'; ctx.fill();
+    } else if (biome.floor==='embers') {
+      ctx.globalAlpha=0.5+Math.sin(t*0.004+fd.phase)*0.4;
+      ctx.fillStyle=fd.variant<3?'#FF6D00':'#FFD600';
+      ctx.beginPath(); ctx.arc(0,0,fd.size*0.25,0,Math.PI*2); ctx.fill();
+    } else if (biome.floor==='snowflakes') {
+      ctx.globalAlpha=0.4+Math.sin(t*0.001+fd.phase)*0.3;
+      ctx.fillStyle='#fff';
+      ctx.beginPath(); ctx.arc(0,0,fd.size*0.2,0,Math.PI*2); ctx.fill();
+    } else if (biome.floor==='stars_floor') {
+      ctx.globalAlpha=0.3+Math.sin(t*0.003+fd.phase)*0.3;
+      ctx.fillStyle=['#E040FB','#00E5FF','#FFD54F','#76FF03','#FF4081'][fd.variant];
+      const sz=fd.size*0.15;
+      ctx.beginPath(); for (let p=0;p<5;p++) { const a=(p/5)*Math.PI*2-Math.PI/2;
+        ctx.lineTo(Math.cos(a)*sz*2,Math.sin(a)*sz*2);
+        const a2=a+Math.PI/5; ctx.lineTo(Math.cos(a2)*sz,Math.sin(a2)*sz);
+      } ctx.fill();
+    } else if (biome.floor==='void') {
+      ctx.globalAlpha=0.15+Math.sin(t*0.005+fd.phase)*0.1;
+      const hue=(t*0.02+fd.phase*50)%360;
+      ctx.fillStyle=`hsl(${hue},80%,50%)`;
+      ctx.beginPath(); ctx.arc(0,0,fd.size*0.2,0,Math.PI*2); ctx.fill();
+    }
+    ctx.globalAlpha=1;
+    ctx.restore();
+  });
+}
+
+function drawBackground(time) {
+  drawSky(); drawClouds(); drawTrees(); drawGround(); drawFloor(time);
+  ctx.fillStyle=biome.fog; ctx.fillRect(0,0,W,H);
+}
+
+// ===== BEE (with space helmet in later biomes) =====
+function drawBee(x,y,s,phase,flip) {
+  ctx.save(); ctx.translate(x,y+Math.sin(phase)*2);
+  if (flip) ctx.scale(-1,1);
+  const inSpace = ['space','blackhole','aurora','volcano'].includes(biome.key);
+  // shadow (not in space)
+  if (!['space','blackhole'].includes(biome.key)) {
+    ctx.globalAlpha=0.1; ctx.fillStyle='#000';
+    ctx.beginPath(); ctx.ellipse(0,s*2.5,s*0.6,s*0.12,0,0,Math.PI*2); ctx.fill(); ctx.globalAlpha=1;
+  }
+  // wings
+  const wf=Math.sin(phase*12)*0.45;
+  ctx.globalAlpha=0.3; ctx.fillStyle=inSpace?'#B3E5FC':'#E3F2FD'; ctx.strokeStyle='rgba(255,255,255,0.4)'; ctx.lineWidth=0.5;
+  ctx.save(); ctx.rotate(wf-0.3);
+  ctx.beginPath(); ctx.ellipse(-s*0.35,-s*0.5,s*0.55,s*0.28,-0.3,0,Math.PI*2); ctx.fill(); ctx.stroke(); ctx.restore();
+  ctx.save(); ctx.rotate(-wf+0.3);
+  ctx.beginPath(); ctx.ellipse(s*0.35,-s*0.5,s*0.55,s*0.28,0.3,0,Math.PI*2); ctx.fill(); ctx.stroke(); ctx.restore();
+  ctx.globalAlpha=1;
+  // legs
+  ctx.strokeStyle='#5D4037'; ctx.lineWidth=1;
+  for (let i=-1;i<=1;i++) { ctx.beginPath(); ctx.moveTo(i*s*0.25,s*0.3); ctx.lineTo(i*s*0.35,s*0.55); ctx.stroke(); }
+  // abdomen
+  let g=ctx.createRadialGradient(0,s*0.15,s*0.05,0,s*0.15,s*0.45);
+  g.addColorStop(0,'#FFB300'); g.addColorStop(1,'#E65100');
+  ctx.fillStyle=g; ctx.beginPath(); ctx.ellipse(0,s*0.15,s*0.4,s*0.38,0,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='#3E2723';
+  for (let i=0;i<3;i++) { ctx.beginPath(); ctx.ellipse(0,i*s*0.18,s*0.38*(1-i*0.08),s*0.05,0,0,Math.PI*2); ctx.fill(); }
+  // thorax
+  g=ctx.createRadialGradient(0,-s*0.22,s*0.05,0,-s*0.22,s*0.3);
+  g.addColorStop(0,'#FFCA28'); g.addColorStop(1,'#FF8F00');
+  ctx.fillStyle=g; ctx.beginPath(); ctx.ellipse(0,-s*0.22,s*0.28,s*0.24,0,0,Math.PI*2); ctx.fill();
+  // fuzz
+  ctx.globalAlpha=0.15; ctx.fillStyle='#FFF8E1'; fuzzSeed=42;
+  for (let i=0;i<8;i++) { ctx.beginPath(); ctx.arc((srand()-0.5)*s*0.5,-s*0.22+(srand()-0.5)*s*0.35,1.5,0,Math.PI*2); ctx.fill(); }
+  ctx.globalAlpha=1;
+  // head
+  ctx.fillStyle='#4E342E'; ctx.beginPath(); ctx.arc(0,-s*0.45,s*0.16,0,Math.PI*2); ctx.fill();
+  // space helmet!
+  if (inSpace) {
+    ctx.globalAlpha=0.2; ctx.fillStyle='#B3E5FC';
+    ctx.beginPath(); ctx.arc(0,-s*0.43,s*0.24,0,Math.PI*2); ctx.fill();
+    ctx.globalAlpha=0.5; ctx.strokeStyle='#90A4AE'; ctx.lineWidth=1.5;
+    ctx.beginPath(); ctx.arc(0,-s*0.43,s*0.24,0,Math.PI*2); ctx.stroke();
+    ctx.globalAlpha=0.3; ctx.fillStyle='#fff';
+    ctx.beginPath(); ctx.arc(-s*0.1,-s*0.52,s*0.06,0,Math.PI*2); ctx.fill();
+    ctx.globalAlpha=1;
+  }
+  // eyes
+  ctx.fillStyle='#1B0000';
+  ctx.beginPath(); ctx.ellipse(-s*0.1,-s*0.48,s*0.07,s*0.08,0,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(s*0.1,-s*0.48,s*0.07,s*0.08,0,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='rgba(255,255,255,0.4)';
+  ctx.beginPath(); ctx.arc(-s*0.08,-s*0.51,s*0.025,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(s*0.12,-s*0.51,s*0.025,0,Math.PI*2); ctx.fill();
+  // antennae (poke through helmet)
+  ctx.strokeStyle='#4E342E'; ctx.lineWidth=1.2;
+  ctx.beginPath(); ctx.moveTo(-s*0.05,-s*0.58); ctx.quadraticCurveTo(-s*0.2,-s*0.8,-s*0.25,-s*0.75); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(s*0.05,-s*0.58); ctx.quadraticCurveTo(s*0.2,-s*0.8,s*0.25,-s*0.75); ctx.stroke();
+  ctx.fillStyle='#FF8F00';
+  ctx.beginPath(); ctx.arc(-s*0.25,-s*0.75,2,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(s*0.25,-s*0.75,2,0,Math.PI*2); ctx.fill();
+  // stinger
+  ctx.fillStyle='#3E2723';
+  ctx.beginPath(); ctx.moveTo(-s*0.05,s*0.5); ctx.lineTo(0,s*0.7); ctx.lineTo(s*0.05,s*0.5); ctx.fill();
+  ctx.restore();
+}
+
+// ===== HORNET =====
+function drawHornet(x,y,s,phase,vx) {
+  ctx.save(); ctx.translate(x,y+Math.sin(phase*1.5)*2);
+  if (vx>0) ctx.scale(-1,1);
+  if (!['space','blackhole'].includes(biome.key)) {
+    ctx.globalAlpha=0.08; ctx.fillStyle='#000';
+    ctx.beginPath(); ctx.ellipse(0,s*2.8,s*0.7,s*0.1,0,0,Math.PI*2); ctx.fill(); ctx.globalAlpha=1;
+  }
+  const wf=Math.sin(phase*14)*0.4;
+  ctx.globalAlpha=0.25; ctx.fillStyle='#FFECB3';
+  ctx.save(); ctx.rotate(wf-0.25);
+  ctx.beginPath(); ctx.ellipse(-s*0.4,-s*0.6,s*0.7,s*0.3,-0.2,0,Math.PI*2); ctx.fill(); ctx.restore();
+  ctx.save(); ctx.rotate(-wf+0.25);
+  ctx.beginPath(); ctx.ellipse(s*0.4,-s*0.6,s*0.7,s*0.3,0.2,0,Math.PI*2); ctx.fill(); ctx.restore();
+  ctx.globalAlpha=1;
+  ctx.strokeStyle='#4E342E'; ctx.lineWidth=1.2;
+  for (let i=-1;i<=1;i++) { ctx.beginPath(); ctx.moveTo(i*s*0.2,s*0.25); ctx.quadraticCurveTo(i*s*0.45,s*0.5,i*s*0.4,s*0.65); ctx.stroke(); }
+  let g=ctx.createRadialGradient(0,s*0.2,s*0.05,0,s*0.2,s*0.55);
+  g.addColorStop(0,'#BF360C'); g.addColorStop(0.7,'#4E342E'); g.addColorStop(1,'#1B0000');
+  ctx.fillStyle=g; ctx.beginPath(); ctx.ellipse(0,s*0.2,s*0.42,s*0.48,0,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='#FF6F00';
+  for (let i=0;i<3;i++) { ctx.beginPath(); ctx.ellipse(0,s*0.05+i*s*0.2,s*0.4*(1-i*0.05),s*0.04,0,0,Math.PI*2); ctx.fill(); }
+  ctx.fillStyle='#5D4037'; ctx.beginPath(); ctx.ellipse(0,-s*0.2,s*0.3,s*0.26,0,0,Math.PI*2); ctx.fill();
+  g=ctx.createRadialGradient(0,-s*0.48,s*0.04,0,-s*0.48,s*0.2);
+  g.addColorStop(0,'#BF360C'); g.addColorStop(1,'#3E2723');
+  ctx.fillStyle=g; ctx.beginPath(); ctx.arc(0,-s*0.48,s*0.18,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='#D50000';
+  ctx.beginPath(); ctx.ellipse(-s*0.1,-s*0.5,s*0.08,s*0.09,0,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(s*0.1,-s*0.5,s*0.08,s*0.09,0,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='#FFEB3B';
+  ctx.beginPath(); ctx.arc(-s*0.08,-s*0.52,s*0.03,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(s*0.12,-s*0.52,s*0.03,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='#1B0000';
+  ctx.beginPath(); ctx.moveTo(-s*0.08,-s*0.33); ctx.lineTo(-s*0.18,-s*0.22); ctx.lineTo(-s*0.02,-s*0.3); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(s*0.08,-s*0.33); ctx.lineTo(s*0.18,-s*0.22); ctx.lineTo(s*0.02,-s*0.3); ctx.fill();
+  ctx.strokeStyle='#3E2723'; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(-s*0.06,-s*0.63); ctx.quadraticCurveTo(-s*0.25,-s*0.85,-s*0.3,-s*0.8); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(s*0.06,-s*0.63); ctx.quadraticCurveTo(s*0.25,-s*0.85,s*0.3,-s*0.8); ctx.stroke();
+  ctx.fillStyle='#1B0000';
+  ctx.beginPath(); ctx.moveTo(-s*0.04,s*0.65); ctx.lineTo(0,s*0.88); ctx.lineTo(s*0.04,s*0.65); ctx.fill();
+  ctx.restore();
+}
+
+// ===== NECTAR =====
+function drawNectar(x,y,sz,phase) {
+  ctx.save(); ctx.translate(x,y);
+  ctx.globalAlpha=0.7+Math.sin(phase*3)*0.2;
+  ctx.fillStyle='#FFD54F'; ctx.shadowColor='#FFD54F'; ctx.shadowBlur=12;
+  ctx.beginPath(); ctx.moveTo(0,-sz);
+  ctx.quadraticCurveTo(sz*0.8,-sz*0.3,sz*0.6,sz*0.3);
+  ctx.quadraticCurveTo(0,sz*1.1,-sz*0.6,sz*0.3);
+  ctx.quadraticCurveTo(-sz*0.8,-sz*0.3,0,-sz);
+  ctx.fill(); ctx.shadowBlur=0;
+  ctx.fillStyle='rgba(255,255,255,0.5)';
+  ctx.beginPath(); ctx.ellipse(-sz*0.15,-sz*0.3,sz*0.12,sz*0.2,-0.3,0,Math.PI*2); ctx.fill();
+  ctx.globalAlpha=1; ctx.restore();
+}
+
+// ===== GAME STATE =====
+let playing=false, score=0, best=0, lives=3, combo=0, difficulty=1;
+let frameCount=0, invincible=0;
+const bee={x:0,y:0,size:26,phase:0,lastDx:0};
+let hornets=[], nectars=[], particles=[];
+let inputX=0, inputY=0;
+
+canvas.addEventListener('mousemove', e=>{inputX=e.clientX;inputY=e.clientY;});
+canvas.addEventListener('touchmove', e=>{e.preventDefault();inputX=e.touches[0].clientX;inputY=e.touches[0].clientY;},{passive:false});
+canvas.addEventListener('touchstart', e=>{e.preventDefault();inputX=e.touches[0].clientX;inputY=e.touches[0].clientY;},{passive:false});
+
+function spawnParticles(x,y,color,count) {
+  for (let i=0;i<count;i++) { const a=Math.random()*Math.PI*2, sp=1+Math.random()*3.5;
+    particles.push({x,y,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp,life:1,decay:0.02+Math.random()*0.02,size:1.5+Math.random()*3,color}); }
+}
+function showPopup(x,y,text) {
+  const el=document.createElement('div'); el.className='combo-popup';
+  el.style.left=x+'px'; el.style.top=y+'px'; el.textContent=text;
+  document.body.appendChild(el); setTimeout(()=>el.remove(),1200);
+}
+function showBiomeLabel() {
+  const el=document.createElement('div'); el.className='biome-label';
+  el.textContent=`${biome.emoji} ${biome.name}`;
+  document.body.appendChild(el); setTimeout(()=>el.remove(),2500);
+}
+function checkBiomeSwitch() {
+  const newBiome = getCurrentBiome(score);
+  if (newBiome.key !== biome.key) {
+    biome = newBiome;
+    biomeIndex = BIOME_LIST.indexOf(biome);
+    biomesVisitedSet.add(biome.name);
+    generateScene();
+    showBiomeLabel();
+  }
+}
+function dist(a,b) { return Math.hypot(a.x-b.x, a.y-b.y); }
+function updateHUD() {
+  document.getElementById('scoreDisplay').textContent=score;
+  document.getElementById('biomeHud').textContent=`${biome.emoji} ${biome.name}`;
+  const h=document.getElementById('heartsDisplay'); h.innerHTML='';
+  for (let i=0;i<3;i++) { const s=document.createElement('span'); s.className='heart'+(i>=lives?' lost':''); s.textContent='❤️'; h.appendChild(s); }
+}
+
+function startGame() {
+  playing=true; score=0; lives=3; combo=0; difficulty=1; frameCount=0; invincible=0;
+  hornets=[]; nectars=[]; particles=[];
+  biomeIndex=0; biome=BIOME_LIST[0];
+  biomesVisitedSet=new Set([biome.name]);
+  bee.x=W/2; bee.y=H/2; inputX=W/2; inputY=H/2;
+  generateScene();
+  document.getElementById('startScreen').classList.add('hidden');
+  document.getElementById('gameOverScreen').classList.add('hidden');
+  document.getElementById('hud').style.display='flex';
+  showBiomeLabel(); updateHUD();
+  requestAnimationFrame(loop);
+}
+
+function gameOver() {
+  playing=false; if(score>best) best=score;
+  document.getElementById('finalScore').textContent=`🍯 ${score} Punkte`;
+  document.getElementById('bestScore').textContent=`Bester: ${best}`;
+  const visited=[...biomesVisitedSet].map(n => {
+    const b=BIOME_LIST.find(b=>b.name===n);
+    return b ? `${b.emoji} ${b.name}` : n;
+  });
+  document.getElementById('biomesVisited').textContent=`Bereist: ${visited.join(' → ')}`;
+  document.getElementById('gameOverScreen').classList.remove('hidden');
+  document.getElementById('hud').style.display='none';
+}
+
+function loop(time) {
+  if (!playing) return;
+  frameCount++; bee.phase+=0.06;
+  if (invincible>0) invincible--;
+  difficulty=1+score/60;
+
+  // check biome
+  checkBiomeSwitch();
+
+  // spawn hornets
+  const rate=Math.max(18, 55-difficulty*3.5);
+  if (frameCount%Math.floor(rate)===0) {
+    const side=Math.random()<0.5?-1:1;
+    hornets.push({
+      x:side===-1?-50:W+50, y:30+Math.random()*(H*0.65),
+      vx:-side*(1.2+Math.random()*1.2+difficulty*0.25),
+      vy:(Math.random()-0.5)*1.2,
+      size:22+Math.random()*12, phase:Math.random()*100,
+      tracking:Math.random()<0.1+difficulty*0.04
+    });
+  }
+  if (frameCount%90===0) {
+    nectars.push({ x:40+Math.random()*(W-80), y:-20,
+      vy:0.6+Math.random()*0.8, vx:(Math.random()-0.5)*0.4,
+      size:9+Math.random()*5, phase:Math.random()*100 });
+  }
+
+  // move bee
+  const dx=inputX-bee.x;
+  bee.lastDx=bee.lastDx*0.9+dx*0.1;
+  bee.x+=dx*0.1; bee.y+=(inputY-bee.y)*0.1;
+  bee.x=Math.max(bee.size,Math.min(W-bee.size,bee.x));
+  bee.y=Math.max(bee.size,Math.min(H-bee.size,bee.y));
+
+  // hornets
+  hornets.forEach(h => {
+    h.phase+=0.05;
+    if (h.tracking) {
+      const ddx=bee.x-h.x, ddy=bee.y-h.y, d=Math.hypot(ddx,ddy)||1;
+      h.vx+=(ddx/d)*0.05; h.vy+=(ddy/d)*0.05;
+      const mx=2.8+difficulty*0.2, sp=Math.hypot(h.vx,h.vy);
+      if (sp>mx){h.vx*=mx/sp;h.vy*=mx/sp;}
+    }
+    h.x+=h.vx; h.y+=h.vy+Math.sin(h.phase)*0.6;
+  });
+  const bH=hornets.length;
+  hornets=hornets.filter(h=>h.x>-80&&h.x<W+80&&h.y>-80&&h.y<H+80);
+  const dodged=bH-hornets.length;
+  if (dodged>0) { score+=dodged; combo+=dodged;
+    if (combo>=5&&combo%5===0){showPopup(bee.x,bee.y-40,`${combo}x Combo!`);score+=5;}
+  }
+
+  nectars.forEach(n=>{n.phase+=0.04;n.y+=n.vy;n.x+=n.vx+Math.sin(n.phase)*0.25;});
+  nectars=nectars.filter(n=>n.y<H+30);
+
+  // collisions
+  if (invincible===0) {
+    for (let i=hornets.length-1;i>=0;i--) {
+      if (dist(bee,hornets[i])<bee.size+hornets[i].size*0.45) {
+        lives--;combo=0;invincible=90;
+        spawnParticles(bee.x,bee.y,'#E53935',12);
+        canvas.classList.add('shake'); setTimeout(()=>canvas.classList.remove('shake'),350);
+        hornets.splice(i,1); updateHUD();
+        if (lives<=0){gameOver();return;} break;
+      }
+    }
+  }
+  for (let i=nectars.length-1;i>=0;i--) {
+    if (dist(bee,nectars[i])<bee.size+nectars[i].size) {
+      score+=3; spawnParticles(nectars[i].x,nectars[i].y,'#FFD54F',8);
+      showPopup(nectars[i].x,nectars[i].y-25,'+3'); nectars.splice(i,1);
+    }
+  }
+
+  particles.forEach(p=>{p.x+=p.vx;p.y+=p.vy;p.vy+=0.04;p.life-=p.decay;});
+  particles=particles.filter(p=>p.life>0);
+  clouds.forEach(c=>{c.x+=c.speed;if(c.x>W+120){c.x=-120;c.y=20+Math.random()*H*0.2;}});
+
+  // animate floor details (bubbles rise, embers rise, snowflakes fall)
+  if (['bubbles','embers','snowflakes','stars_floor','void'].includes(biome.floor)) {
+    floorDetails.forEach(fd => {
+      if (biome.floor==='bubbles') { fd.y+=fd.vy*0.3; if(fd.y<-20){fd.y=H+10;fd.x=Math.random()*W;} }
+      else if (biome.floor==='embers') { fd.y+=fd.vy*0.5; fd.x+=Math.sin(fd.phase+frameCount*0.02)*0.3; if(fd.y<-20){fd.y=H*0.85+Math.random()*H*0.15;fd.x=Math.random()*W;} }
+      else if (biome.floor==='snowflakes') { fd.y-=fd.vy*0.2; fd.x+=Math.sin(fd.phase+frameCount*0.01)*0.5; if(fd.y<-20){fd.y=H+10;fd.x=Math.random()*W;} }
+    });
+  }
+
+  // ===== DRAW =====
+  drawBackground(time);
+  nectars.forEach(n=>drawNectar(n.x,n.y,n.size,n.phase));
+  hornets.forEach(h=>drawHornet(h.x,h.y,h.size,h.phase,h.vx));
+  if (invincible===0||Math.floor(invincible/5)%2===0) drawBee(bee.x,bee.y,bee.size,bee.phase,bee.lastDx<-0.5);
+  hornets.forEach(h=>{if(h.tracking){const d=dist(bee,h);if(d<180){
+    ctx.strokeStyle=`rgba(230,57,70,${(1-d/180)*0.3})`;ctx.lineWidth=1.5;ctx.setLineDash([5,4]);
+    ctx.beginPath();ctx.arc(h.x,h.y,h.size+8,0,Math.PI*2);ctx.stroke();ctx.setLineDash([]);
+  }}});
+  particles.forEach(p=>{ctx.globalAlpha=p.life;ctx.fillStyle=p.color;
+    ctx.beginPath();ctx.arc(p.x,p.y,p.size,0,Math.PI*2);ctx.fill();ctx.globalAlpha=1;});
+
+  updateHUD();
+  requestAnimationFrame(loop);
+}
+
+document.getElementById('btnStart').addEventListener('click', startGame);
+document.getElementById('btnRestart').addEventListener('click', startGame);
+</script>
+</body>
+</html>

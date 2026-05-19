@@ -48,15 +48,35 @@ const WEEKDAYS = ["Mo","Di","Mi","Do","Fr","Sa","So"];
 const WEEKDAYS_FULL = ["Montag","Dienstag","Mittwoch","Donnerstag","Freitag","Samstag","Sonntag"];
 const TODAY = new Date();
 
-const TRACHTEN = [
-  { name: "Obstblüte", emoji: "🌸", start: [3, 10], end: [4, 15], color: "#f472b6" },
-  { name: "Raps", emoji: "🌼", start: [3, 20], end: [5, 10], color: "#facc15" },
-  { name: "Robinie", emoji: "🌿", start: [4, 20], end: [5, 25], color: "#4ade80" },
-  { name: "Linde", emoji: "🌳", start: [5, 15], end: [6, 20], color: "#34d399" },
-  { name: "Wald/Honigtau", emoji: "🌲", start: [5, 1], end: [7, 31], color: "#2dd4bf" },
-  { name: "Sonnenblume", emoji: "🌻", start: [6, 15], end: [8, 15], color: "#fbbf24" },
-  { name: "Heide", emoji: "💜", start: [7, 15], end: [8, 31], color: "#a78bfa" },
-];
+// Regionale Trachten — dynamisch nach Breitengrad
+// Basis: 48°N (Oberbayern). Pro Grad südlicher: ~3 Tage früher. Pro Grad nördlicher: ~3 Tage später.
+function getTrachtenForLat(lat) {
+  var shift = Math.round((lat - 48) * 3);
+  function s(m, d) { var nd = d + shift, nm = m; while (nd > 28) { nd -= 30; nm++; } while (nd < 1) { nd += 30; nm--; } return [Math.max(0, Math.min(11, nm)), Math.max(1, Math.min(28, nd))]; }
+  var t = [];
+  t.push({ name: "Löwenzahn", emoji: "🌼", start: s(3,5), end: s(4,20), color: "#fde047" });
+  t.push({ name: "Obstblüte", emoji: "🌸", start: s(3,15), end: s(4,15), color: "#f472b6" });
+  if (lat < 55) t.push({ name: "Raps", emoji: "💛", start: s(3,25), end: s(5,5), color: "#facc15" });
+  if (lat < 52) {
+    t.push({ name: "Robinie", emoji: "🌿", start: s(5,1), end: s(5,20), color: "#4ade80" });
+  } else {
+    t.push({ name: "Robinie", emoji: "🌿", start: s(5,10), end: s(5,28), color: "#4ade80" });
+  }
+  t.push({ name: "Linde", emoji: "🌳", start: s(5,15), end: s(6,25), color: "#34d399" });
+  t.push({ name: "Wald/Honigtau", emoji: "🌲", start: s(5,1), end: s(7,31), color: "#2dd4bf" });
+  if (lat < 46) {
+    t.push({ name: "Sonnenblume", emoji: "🌻", start: s(5,15), end: s(7,15), color: "#fbbf24" });
+    t.push({ name: "Akazie", emoji: "🌾", start: s(4,15), end: s(5,10), color: "#86efac" });
+  } else if (lat > 53) {
+    t.push({ name: "Heide", emoji: "💜", start: s(7,1), end: s(8,15), color: "#a78bfa" });
+    t.push({ name: "Wiesenblumen", emoji: "🌺", start: s(4,15), end: s(7,31), color: "#c084fc" });
+  } else {
+    t.push({ name: "Wiesenblumen", emoji: "🌺", start: s(4,15), end: s(7,31), color: "#c084fc" });
+    t.push({ name: "Phacelia", emoji: "💜", start: s(5,15), end: s(8,15), color: "#a78bfa" });
+  }
+  return t;
+}
+var TRACHTEN = getTrachtenForLat(48.14);
 const SCHWARMZEIT = { start: [3, 15], end: [5, 30] };
 
 const STANDORTE = [
@@ -132,6 +152,7 @@ function SchwarmzeitKalender() {
 
   // Location state
   const [standort, setStandort] = useState(() => loadData("sz_standort", STANDORTE[0]));
+  const [trachten, setTrachten] = useState(() => getTrachtenForLat(loadData("sz_standort", STANDORTE[0]).lat || 48.14));
   const [showOrtAuswahl, setShowOrtAuswahl] = useState(false);
   const [customLat, setCustomLat] = useState("");
   const [customLon, setCustomLon] = useState("");
@@ -154,6 +175,8 @@ function SchwarmzeitKalender() {
   const [voiceListening, setVoiceListening] = useState(false);
   const [voiceText, setVoiceText] = useState("");
   const [voiceSupported] = useState(() => typeof window !== "undefined" && ("SpeechRecognition" in window || "webkitSpeechRecognition" in window));
+  const [wissenView, setWissenView] = useState("aktuell");
+  const [wissenTag, setWissenTag] = useState(null);
 
   const parseVoice = useCallback((text) => {
     const t = text.toLowerCase();
@@ -263,7 +286,7 @@ function SchwarmzeitKalender() {
   useEffect(() => { saveData("sz_voelker", voelker); }, [voelker]);
   useEffect(() => { saveData("sz_kontrollen", kontrollen); }, [kontrollen]);
   useEffect(() => { saveData("sz_notizen", notizen); }, [notizen]);
-  useEffect(() => { saveData("sz_standort", standort); }, [standort]);
+  useEffect(() => { saveData("sz_standort", standort); setTrachten(getTrachtenForLat(standort.lat || 48.14)); }, [standort]);
   useEffect(() => { saveData("sz_ernten", ernten); }, [ernten]);
   useEffect(() => { saveData("sz_stockkarten", stockkarten); }, [stockkarten]);
 
@@ -408,7 +431,7 @@ function SchwarmzeitKalender() {
   const daysInMonth = getDaysInMonth(year, month);
   const firstDay = getFirstDayOfMonth(year, month);
   const isSchwarmzeit = (date) => isInRange(date, SCHWARMZEIT.start, SCHWARMZEIT.end, year);
-  const getTrachten = (date) => TRACHTEN.filter(t => isInRange(date, t.start, t.end, year));
+  const getTrachten = (date) => trachten.filter(t => isInRange(date, t.start, t.end, year));
   const hasKontrolle = (dk) => kontrollen[dk] && Object.values(kontrollen[dk]).some(Boolean);
   const hasNotiz = (dk) => notizen[dk] && notizen[dk].length > 0;
   const isToday = (day) => day === TODAY.getDate() && month === TODAY.getMonth() && year === TODAY.getFullYear();
@@ -581,14 +604,13 @@ function SchwarmzeitKalender() {
         </div>
 
         {/* ══ TABS ══ */}
-        <div style={{ display: "flex", gap: 4, marginBottom: 14, background: C.surface, borderRadius: 12, padding: 4, border: `1px solid ${C.border}` }}>
-          {[["kalender", "📅 Kalender"], ["stockkarte", "📋 Stockkarte"], ["wetter", "🌤️ Wetter"], ["region", "🏘️ Region"]].map(([key, label]) => (
-            <button key={key} onClick={() => setActiveTab(key)} style={{
-              flex: 1, padding: "9px 14px", borderRadius: 9, border: "none", cursor: "pointer", fontSize: 13, fontWeight: 700,
-              background: activeTab === key ? C.accentGlow : "transparent",
-              color: activeTab === key ? C.accent : C.textMuted,
-            }}>{label}</button>
-          ))}
+        <div style={{ display: "flex", gap: 2, marginBottom: 14, background: C.surface, borderRadius: 14, padding: 4, border: `1px solid ${C.border}` }}>
+          {[["kalender","📅","Kalender"], ["stockkarte","📋","Stockkarte"], ["wetter","🌤️","Wetter"], ["region","🏘️","Region"], ["wissen","🐝","Wissen"]].map(function(item) { var key = item[0], icon = item[1], label = item[2]; return (
+            <button key={key} onClick={function() { setActiveTab(key); }} style={{ flex: 1, padding: "8px 2px 6px", borderRadius: 11, border: "none", cursor: "pointer", background: activeTab === key ? C.accentGlow : "transparent", display: "flex", flexDirection: "column", alignItems: "center", gap: 2, minWidth: 0 }}>
+              <span style={{ fontSize: 20, lineHeight: 1 }}>{icon}</span>
+              <span style={{ fontSize: 10, fontWeight: 700, color: activeTab === key ? C.accent : C.textDim, letterSpacing: 0.2 }}>{label}</span>
+            </button>
+          ); })}
         </div>
 
         {/* ═══════════ STOCKKARTE TAB ═══════════ */}
@@ -1010,7 +1032,7 @@ function SchwarmzeitKalender() {
                       <div style={{ fontSize: 11, color: C.textDim, marginBottom: 6 }}>Nach Tracht</div>
                       <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                         {Object.entries(byTracht).map(([t, kg]) => {
-                          const tr = TRACHTEN.find(x => x.name === t);
+                          const tr = trachten.find(x => x.name === t);
                           return <span key={t} style={{ fontSize: 12, fontWeight: 600, padding: "3px 8px", borderRadius: 8, background: tr ? `${tr.color}22` : C.surfaceLight, color: tr ? tr.color : C.text }}>{tr ? tr.emoji : "🍯"} {t}: {kg.toFixed(1)} kg</span>;
                         })}
                       </div>
@@ -1033,7 +1055,7 @@ function SchwarmzeitKalender() {
                         <div style={{ fontSize: 10, color: C.textDim, marginBottom: 3 }}>Tracht</div>
                         <select value={ernteForm.tracht} onChange={e => setErnteForm(p => ({...p, tracht: e.target.value }))} style={{ width: "100%", border: `1px solid ${C.border}`, borderRadius: 8, padding: "7px 8px", fontSize: 13, background: C.surface, color: C.text, outline: "none" }}>
                           <option value="">Tracht wählen...</option>
-                          {TRACHTEN.map(t => <option key={t.name} value={t.name}>{t.emoji} {t.name}</option>)}
+                          {trachten.map(t => <option key={t.name} value={t.name}>{t.emoji} {t.name}</option>)}
                           <option value="Frühtracht">🌷 Frühtracht (Mix)</option>
                           <option value="Sommertracht">☀️ Sommertracht (Mix)</option>
                         </select>
@@ -1062,7 +1084,7 @@ function SchwarmzeitKalender() {
                 )}
                 {thisYearErnten.sort((a,b) => b.datum.localeCompare(a.datum)).map(e => {
                   const v = voelker.find(vk => vk.id === e.volkId);
-                  const tr = TRACHTEN.find(t => t.name === e.tracht);
+                  const tr = trachten.find(t => t.name === e.tracht);
                   return (
                     <div key={e.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", background: C.surfaceLight, borderRadius: 8, marginBottom: 3, fontSize: 13 }}>
                       <span style={{ fontSize: 16 }}>{tr ? tr.emoji : "🍯"}</span>
@@ -1146,6 +1168,273 @@ function SchwarmzeitKalender() {
                   ))}
                 </div>
               </div>
+
+              {/* Daten Export / Import */}
+              <div style={{ ...card, marginTop: 14, padding: 16 }}>
+                <h3 style={{ ...sectionTitle, margin: "0 0 12px" }}>💾 Daten sichern & übertragen</h3>
+
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 14 }}>
+                  {/* JSON Export */}
+                  <button onClick={() => {
+                    const data = {
+                      version: 3,
+                      exportDate: fmt(TODAY),
+                      app: "SerBee",
+                      voelker,
+                      kontrollen,
+                      notizen,
+                      stockkarten,
+                      ernten,
+                      standort,
+                    };
+                    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement("a"); a.href = url; a.download = `serbee-backup-${fmt(TODAY)}.json`; a.click();
+                    URL.revokeObjectURL(url);
+                  }} style={{ flex: 1, minWidth: 130, padding: "14px 16px", borderRadius: 12, border: "none", cursor: "pointer", background: C.accentGlow, color: C.accent, fontWeight: 700, fontSize: 13, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, border: `1px solid ${C.accent}44` }}>
+                    📦 JSON-Backup
+                  </button>
+
+                  {/* CSV Ernten */}
+                  <button onClick={() => {
+                    const header = "Datum;Volk;Tracht;kg;Notiz";
+                    const rows = ernten.map(e => {
+                      const v = voelker.find(vk => vk.id === e.volkId);
+                      return [e.datum, v ? v.name : "", e.tracht || "", e.kg || "", (e.notiz || "").replace(/;/g, ",")].join(";");
+                    });
+                    const csv = "\uFEFF" + [header, ...rows].join("\n");
+                    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement("a"); a.href = url; a.download = `serbee-ernten-${fmt(TODAY)}.csv`; a.click();
+                    URL.revokeObjectURL(url);
+                  }} style={{ flex: 1, minWidth: 130, padding: "14px 16px", borderRadius: 12, border: "none", cursor: "pointer", background: C.surfaceLight, color: C.text, fontWeight: 700, fontSize: 13, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, border: `1px solid ${C.border}` }}>
+                    📊 Ernten (CSV)
+                  </button>
+
+                  {/* CSV Stockkarten */}
+                  <button onClick={() => {
+                    const header = "Datum;Volk;Stärke;Wabensitz;Sanftmut;Futter;Eier;Offene Brut;Verd. Brut;Schwarmzellen;Nachschaffung;Königin gesehen;Königin Jahr;Honigwaben;Futtergabe kg;Notiz";
+                    const opts = {staerke:["","Schwach","Mäßig","Gut","Stark"],wabensitz:["","Gering","Mäßig","Gut","Sehr gut"],sanftmut:["","Stechlustig","Unruhig","Ruhig","Sehr sanft"],futtermenge:["","Leer","Wenig","Ausreichend","Viel"]};
+                    const rows = stockkarten.map(s => {
+                      const v = voelker.find(vk => vk.id === s.volkId);
+                      return [s.datum, v ? v.name : "", opts.staerke[s.staerke]||"", opts.wabensitz[s.wabensitz]||"", opts.sanftmut[s.sanftmut]||"", opts.futtermenge[s.futtermenge]||"", s.eier?"Ja":"Nein", s.offeneBrut?"Ja":"Nein", s.verdeckelteBrut?"Ja":"Nein", s.schwarmzellen?"Ja":"Nein", s.nachschaffung?"Ja":"Nein", s.koeniginGesehen?"Ja":"Nein", s.koeniginJahr||"", s.honigwaben||"", s.futtergabe||"", (s.notiz||"").replace(/;/g, ",")].join(";");
+                    });
+                    const csv = "\uFEFF" + [header, ...rows].join("\n");
+                    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement("a"); a.href = url; a.download = `serbee-durchsichten-${fmt(TODAY)}.csv`; a.click();
+                    URL.revokeObjectURL(url);
+                  }} style={{ flex: 1, minWidth: 130, padding: "14px 16px", borderRadius: 12, border: "none", cursor: "pointer", background: C.surfaceLight, color: C.text, fontWeight: 700, fontSize: 13, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, border: `1px solid ${C.border}` }}>
+                    📋 Durchsichten (CSV)
+                  </button>
+                </div>
+
+                {/* JSON Import */}
+                <div style={{ background: C.surfaceLight, borderRadius: 12, padding: 14 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: C.textMuted, marginBottom: 8 }}>📥 Backup importieren (JSON)</div>
+                  <input type="file" accept=".json" onChange={(e) => {
+                    const file = e.target.files[0]; if (!file) return;
+                    const reader = new FileReader();
+                    reader.onload = (ev) => {
+                      try {
+                        const data = JSON.parse(ev.target.result);
+                        if (data.voelker) setVoelker(data.voelker);
+                        if (data.kontrollen) setKontrollen(data.kontrollen);
+                        if (data.notizen) setNotizen(data.notizen);
+                        if (data.stockkarten) setStockkarten(data.stockkarten);
+                        if (data.ernten) setErnten(data.ernten);
+                        if (data.standort) setStandort(data.standort);
+                        alert("✅ Import erfolgreich! " + (data.voelker ? data.voelker.length + " Völker, " : "") + (data.ernten ? data.ernten.length + " Ernten, " : "") + (data.stockkarten ? data.stockkarten.length + " Durchsichten" : "") + " importiert.");
+                      } catch(err) {
+                        alert("❌ Import fehlgeschlagen: " + err.message);
+                      }
+                    };
+                    reader.readAsText(file);
+                    e.target.value = "";
+                  }} style={{ fontSize: 13, color: C.textMuted }} />
+                  <p style={{ fontSize: 11, color: C.textDim, marginTop: 8, lineHeight: 1.5 }}>Export speichert alle Völker, Durchsichten, Ernten und Einstellungen als Datei. Zum Teilen per WhatsApp/Mail verschicken — der andere importiert sie hier.</p>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* ═══════════ WISSEN TAB ═══════════ */}
+        {activeTab === "wissen" && (() => {
+          const SAISONALE_TIPPS = {
+            0: { title: "Januar", emoji: "❄️", tipps: ["Fluglochkontrolle bei mildem Wetter", "Totenfall am Flugloch beobachten", "Futtervorrat abschätzen (Handprobe)", "Mäuseschutz prüfen"] },
+            1: { title: "Februar", emoji: "🌨️", tipps: ["Futterkontrolle — Notfütterung bei Bedarf (Futterteig)", "Gemüll untersuchen (Varroabefall einschätzen)", "Beutenstandort auf Sturmschäden prüfen", "Rähmchen und Material vorbereiten"] },
+            2: { title: "März", emoji: "🌱", tipps: ["Erste Durchsicht bei >12°C", "Bodenschieber einlegen (Gemülldiagnose)", "Futtervorrat kontrollieren, ggf. Futterteig geben", "Weidenpollen-Eintrag beobachten — Brutbeginn!"] },
+            3: { title: "April", emoji: "🌸", tipps: ["Schwarmkontrolle beginnen (alle 7 Tage!)", "Honigraum aufsetzen wenn Tracht beginnt", "Drohnenrahmen geben (Varroa-Falle)", "Obstblüte & Löwenzahntracht nutzen"] },
+            4: { title: "Mai", emoji: "🐝", tipps: ["Schwarmkontrolle intensiv — alle 7 Tage!", "Schwarmzellen brechen oder Ableger bilden", "Rapstracht endet — rechtzeitig schleudern (kristallisiert!)", "Ableger bilden für Völkervermehrung"] },
+            5: { title: "Juni", emoji: "☀️", tipps: ["Schwarmkontrolle bis Mitte Juni weiterführen", "Honigräume nachsetzen bei guter Tracht", "Lindentracht beobachten", "Jungvölker pflegen und füttern"] },
+            6: { title: "Juli", emoji: "🌻", tipps: ["Letzte Honigernte (Sommertracht)", "Sommertracht schleudern", "Ameisensäure-Behandlung nach letzter Ernte", "Auffütterung beginnen"] },
+            7: { title: "August", emoji: "🌾", tipps: ["Varroabehandlung! (AS Langzeit oder Schwammtuch)", "Einfütterung für den Winter (Ziel: 15-20kg)", "Weiselkontrolle — weisellose Völker vereinigen", "Räubereigefahr beachten — Fluglöcher einengen"] },
+            8: { title: "September", emoji: "🍂", tipps: ["Einfütterung abschließen", "Varroakontrolle (Gemülldiagnose)", "Nachbehandlung bei zu hohem Milbenfall", "Völker zusammenstellen für den Winter"] },
+            9: { title: "Oktober", emoji: "🍁", tipps: ["Mäusegitter anbringen", "Flugloch verkleinern", "Sturmschutz prüfen", "Letzte Futterkontrolle"] },
+            10: { title: "November", emoji: "🌧️", tipps: ["Oxalsäure-Behandlung vorbereiten", "Beutengewicht kontrollieren", "Werkzeug reinigen und desinfizieren", "Wachsschmelzen und Rähmchen drahten"] },
+            11: { title: "Dezember", emoji: "⛄", tipps: ["Oxalsäure träufeln bei Brutfreiheit (unter 5°C)", "Fluglochkontrolle (Totenfall, Kotflecken)", "Ruhe am Bienenstand — Völker nicht stören", "Jahresplanung und Bestellungen"] },
+          };
+          const VARROA_KALENDER = [
+            { zeit: "Dez–Jan", aktion: "Oxalsäure träufeln", hinweis: "Bei Brutfreiheit! Nur einmal pro brutfreier Phase. Außentemperatur unter 5°C ideal.", color: "#60a5fa" },
+            { zeit: "Apr–Mai", aktion: "Drohnenrahmen schneiden", hinweis: "Verdeckelte Drohnenbrut ausschneiden — bindet ca. 20% der Milben. Alle 3 Wochen.", color: "#4ade80" },
+            { zeit: "Jul (nach Ernte)", aktion: "Ameisensäure 60%", hinweis: "Sofort nach letzter Honigernte! Schwammtuch oder Liebig-Dispenser. Temperatur 15-25°C.", color: "#f59e0b" },
+            { zeit: "Aug–Sep", aktion: "AS Nachbehandlung", hinweis: "Bei Milbenfall >5/Tag: unbedingt nachbehandeln! Sonst Winterverluste.", color: "#f97316" },
+            { zeit: "Sep–Okt", aktion: "Gemüllkontrolle", hinweis: "Natürlicher Milbenfall zählen (Windel 3 Tage). Unter 5/Tag = OK.", color: "#a78bfa" },
+            { zeit: "Nov–Dez", aktion: "Oxalsäure vorbereiten", hinweis: "Material bereitlegen. Brutfreiheit abwarten (3 Wochen nach letztem Brutansatz).", color: "#60a5fa" },
+          ];
+          const KURATIERTE_ARTIKEL = [
+            { title: "Schwarmkontrolle: So geht's richtig", quelle: "bienen&natur", emoji: "🐝", tags: ["Praxis","Schwarm"], url: "https://www.bienenundnatur.de/imkerpraxis", teaser: "Die Schwarmkontrolle ist im Frühjahr alle 7 Tage Pflicht. Worauf du achten musst und wie du Schwarmzellen sicher erkennst.", monat: [3,4,5] },
+            { title: "Zwischenableger als Schwarmverhinderung", quelle: "bienen&natur", emoji: "📋", tags: ["Praxis","Ableger"], url: "https://www.bienenundnatur.de/imkerpraxis", teaser: "Der Flugling ist eine bewährte Methode, den Schwarmtrieb zu lenken und gleichzeitig Völker zu vermehren.", monat: [3,4,5] },
+            { title: "Honig schleudern: Wann ist er reif?", quelle: "bienen&natur", emoji: "🍯", tags: ["Ernte","Honig"], url: "https://www.bienenundnatur.de/imkerpraxis", teaser: "Honig sollte erst geschleudert werden, wenn er reif ist. Spritzprobe, Refraktometer und Tricks für optimalen Wassergehalt.", monat: [4,5,6] },
+            { title: "Oxalsäure-Streifen: Neue Behandlungsmethode", quelle: "bienen&natur", emoji: "🦠", tags: ["Varroa","Behandlung"], url: "https://www.bienenundnatur.de/imkerpraxis", teaser: "Seit 2025 sind Oxalsäure-Streifen zugelassen. Zwischen die Waben gehängt, bekämpfen sie Varroa über Wochen.", monat: [10,11,0] },
+            { title: "Asiatische Hornisse: Erkennen und Melden", quelle: "bienen&natur", emoji: "🐝", tags: ["Schädlinge","Hornisse"], url: "https://www.bienenundnatur.de/imkerpraxis", teaser: "Die Asiatische Hornisse breitet sich in Deutschland aus. Wie man Nester erkennt und richtig meldet.", monat: null },
+            { title: "Königinnenzucht: Schritt für Schritt", quelle: "Bienen-Journal", emoji: "👑", tags: ["Zucht","Königin"], url: "https://www.bienenjournal.de", teaser: "Von der Zuchtlatte bis zur Belegstelle — wie die Königinnenvermehrung auch für Hobbyimker gelingt.", monat: [4,5] },
+            { title: "Löwenzahntracht optimal nutzen", quelle: "bienen&natur", emoji: "🌼", tags: ["Tracht","Honig"], url: "https://www.bienenundnatur.de/imkerpraxis", teaser: "Die Löwenzahntracht ist in Deutschland sehr wechselhaft. Standortwahl, Timing und Tipps.", monat: [3,4] },
+            { title: "Fluglochbeobachtung richtig deuten", quelle: "bienen&natur", emoji: "👁️", tags: ["Praxis","Diagnose"], url: "https://www.bienenundnatur.de/imkerpraxis", teaser: "Pollenflug, Räuberei, Orientierungsflug oder Schwarmstimmung? Was das Flugloch verrät.", monat: [2,3,4,5,6,7,8] },
+            { title: "Wesensgemäße Bienenhaltung", quelle: "Mellifera e.V.", emoji: "🌿", tags: ["Philosophie","Naturnah"], url: "https://www.mellifera.de", teaser: "Mellifera lehrt Konzepte, die den Bien als Ganzes respektieren — Naturwabenbau, eigene Vermehrung.", monat: null },
+            { title: "Honigpreise richtig kalkulieren", quelle: "bienen&natur", emoji: "💰", tags: ["Vermarktung","Preis"], url: "https://www.bienenundnatur.de/imkerpraxis", teaser: "Warum deutscher Honig mehr kosten muss als der Supermarkt-Preis und wie man das kommuniziert.", monat: null },
+          ];
+          const WISSEN_LINKS = [
+            { cat: "📰 Imker-Magazine", links: [
+              { name: "bienen&natur", url: "https://www.bienenundnatur.de/imkerpraxis", desc: "Deutschlands auflagenstärkstes Imkermagazin — Praxistipps, Monatshinweise" },
+              { name: "Deutsches Bienen-Journal", url: "https://www.bienenjournal.de", desc: "Fachmagazin für Wissenschaft & Praxis" },
+              { name: "Mellifera e.V.", url: "https://www.mellifera.de", desc: "Wesensgemäße Bienenhaltung, Kurse und Demeter-Imkerei" },
+              { name: "Imkerforum.de", url: "https://www.imkerforum.de", desc: "Größtes deutschsprachiges Imkerforum" },
+            ]},
+            { cat: "📡 Stockwaagen & Trachtdaten", links: [
+              { name: "TrachtNet Bayern", url: "https://www.trachtnet.de", desc: "Tagesaktuelle Waagendaten aus Bayern" },
+              { name: "BeeScales.io", url: "https://public.beescales.io", desc: "Öffentliche Stockwaagen europaweit — Gewichtskurven live" },
+              { name: "Waldtrachtbeobachter Süd", url: "https://www.waldtrachtbeobachter-sued.de", desc: "Honigtau-Prognosen für Süddeutschland" },
+            ]},
+            { cat: "🎓 Lernen & Nachschlagen", links: [
+              { name: "die-honigmacher.de", url: "https://www.die-honigmacher.de", desc: "Umfassendes Imker-Lexikon, Online-Kurse und Trachtpflanzen-Datenbank" },
+              { name: "Bienenkunde Hohenheim", url: "https://bienenkunde.uni-hohenheim.de", desc: "Landesanstalt für Bienenkunde — Forschung, Varroainfos" },
+              { name: "HoneyPi", url: "https://honey-pi.de", desc: "Open-Source Stockwaage zum Selbstbauen mit Raspberry Pi" },
+            ]},
+            { cat: "🏛️ Verbände & Recht", links: [
+              { name: "Deutscher Imkerbund", url: "https://deutscherimkerbund.de", desc: "Dachverband, Honigrichtlinien, DIB-Gewährverschluss" },
+              { name: "LVBI Bayern", url: "https://www.lvbi.de", desc: "Landesverband Bayerischer Imker" },
+              { name: "LWG Veitshöchheim", url: "https://www.lwg.bayern.de/bienen", desc: "Bayerisches Institut — Varroawetter, Trachtbeobachtung" },
+            ]},
+          ];
+
+          var curMonth = TODAY.getMonth();
+          var tip = SAISONALE_TIPPS[curMonth];
+          return (
+            <div>
+              {/* Sub-Tabs */}
+              <div style={{ display: "flex", gap: 3, marginBottom: 14, background: C.surface, borderRadius: 10, padding: 3, border: `1px solid ${C.border}` }}>
+                {[["aktuell","📰 Aktuell"],["saison","🗓️ Saison"],["varroa","🦠 Varroa"],["links","🔗 Links"]].map(function(item) { var k = item[0], l = item[1]; return (
+                  <button key={k} onClick={function() { setWissenView(k); }} style={{ flex: 1, padding: "7px 6px", borderRadius: 8, border: "none", cursor: "pointer", fontSize: 12, fontWeight: 700, background: wissenView===k ? C.accentGlow : "transparent", color: wissenView===k ? C.accent : C.textMuted, whiteSpace: "nowrap", minWidth: 0 }}>{l}</button>
+                ); })}
+              </div>
+
+              {/* AKTUELL */}
+              {wissenView === "aktuell" && (<div>
+                <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 10 }}>
+                  <button onClick={function() { setWissenTag(null); }} style={{ padding: "5px 12px", borderRadius: 16, border: "none", cursor: "pointer", fontSize: 11, fontWeight: 700, background: wissenTag===null ? C.accent : C.surfaceLight, color: wissenTag===null ? "#000" : C.textMuted }}>Alle</button>
+                  {(function() { var tags = []; KURATIERTE_ARTIKEL.forEach(function(a) { a.tags.forEach(function(t) { if (tags.indexOf(t) === -1) tags.push(t); }); }); return tags.slice(0,8).map(function(t) { return <button key={t} onClick={function() { setWissenTag(wissenTag===t ? null : t); }} style={{ padding: "5px 12px", borderRadius: 16, border: "none", cursor: "pointer", fontSize: 11, fontWeight: 700, background: wissenTag===t ? C.accent : C.surfaceLight, color: wissenTag===t ? "#000" : C.textMuted }}>{t}</button>; }); })()}
+                </div>
+                {(function() {
+                  var filtered = KURATIERTE_ARTIKEL.filter(function(a) { return wissenTag === null || (a.tags && a.tags.indexOf(wissenTag) !== -1); });
+                  var saisonArtikel = filtered.filter(function(a) { return a.monat && a.monat.indexOf(curMonth) !== -1; });
+                  var andereArtikel = filtered.filter(function(a) { return !a.monat || a.monat.indexOf(curMonth) === -1; });
+                  var alle = saisonArtikel.concat(andereArtikel);
+                  return <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    {saisonArtikel.length > 0 && <div style={{ fontSize: 11, fontWeight: 700, color: C.accent, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 2 }}>🕐 Jetzt relevant</div>}
+                    {alle.map(function(a, i) {
+                      var isSaison = a.monat && a.monat.indexOf(curMonth) !== -1;
+                      return <a key={i} href={a.url} target="_blank" rel="noopener noreferrer" style={{ background: isSaison ? C.accentGlow : C.surface, borderRadius: 14, padding: "16px", textDecoration: "none", color: C.text, border: `1px solid ${isSaison ? C.accent + "44" : C.border}`, display: "block" }}>
+                        <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
+                          <span style={{ fontSize: 28, lineHeight: 1, flexShrink: 0, marginTop: 2 }}>{a.emoji}</span>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: 15, fontWeight: 700, color: C.text, marginBottom: 4, lineHeight: 1.3 }}>{a.title}</div>
+                            <div style={{ fontSize: 12, color: C.textMuted, lineHeight: 1.5, marginBottom: 8 }}>{a.teaser}</div>
+                            <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+                              <span style={{ fontSize: 11, fontWeight: 700, color: C.accent, background: C.accentGlow, padding: "2px 8px", borderRadius: 6 }}>{a.quelle} ↗</span>
+                              {a.tags && a.tags.map(function(t, j) { return <span key={j} style={{ fontSize: 10, color: C.textDim, background: C.surfaceLight, padding: "2px 7px", borderRadius: 6 }}>{t}</span>; })}
+                              {isSaison && i < saisonArtikel.length && <span style={{ fontSize: 10, fontWeight: 700, color: C.success, background: C.successDim, padding: "2px 7px", borderRadius: 6 }}>✦ Saisonal</span>}
+                            </div>
+                          </div>
+                        </div>
+                      </a>;
+                    })}
+                  </div>;
+                })()}
+              </div>)}
+
+              {/* SAISON */}
+              {wissenView === "saison" && (<div>
+                <div style={{ ...card, marginBottom: 14, borderColor: C.accent + "44" }}>
+                  <h3 style={{ ...sectionTitle, margin: "0 0 4px" }}>{tip.emoji} Was jetzt zu tun ist — {tip.title}</h3>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 10 }}>
+                    {tip.tipps.map(function(t, i) { return <div key={i} style={{ padding: "12px 14px", background: C.surfaceLight, borderRadius: 10, fontSize: 13, lineHeight: 1.5, display: "flex", alignItems: "flex-start", gap: 8 }}><span style={{ color: C.accent, fontWeight: 700, flexShrink: 0, fontSize: 16 }}>•</span>{t}</div>; })}
+                  </div>
+                </div>
+                <div style={{ ...card }}>
+                  <h3 style={{ ...sectionTitle, margin: "0 0 10px" }}>📅 Jahresüberblick</h3>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 6 }}>
+                    {[0,1,2,3,4,5,6,7,8,9,10,11].map(function(mi) { var t2 = SAISONALE_TIPPS[mi], isCur = mi === curMonth; return (
+                      <div key={mi} style={{ background: isCur ? C.accentGlow : C.surfaceLight, borderRadius: 10, padding: "10px", border: `1px solid ${isCur ? C.accent + "44" : "transparent"}` }}>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: isCur ? C.accent : C.text, marginBottom: 4 }}>{t2.emoji} {t2.title}</div>
+                        <div style={{ fontSize: 10, color: C.textDim, lineHeight: 1.4 }}>{t2.tipps[0]}</div>
+                      </div>
+                    ); })}
+                  </div>
+                </div>
+              </div>)}
+
+              {/* VARROA */}
+              {wissenView === "varroa" && (<div>
+                <div style={{ ...card, marginBottom: 14 }}>
+                  <h3 style={{ ...sectionTitle, margin: "0 0 4px" }}>🦠 Varroa-Behandlungsplan</h3>
+                  <p style={{ fontSize: 12, color: C.textDim, marginBottom: 14, lineHeight: 1.5 }}>Bewährtes Schema. Zeitpunkte je nach Witterung anpassen!</p>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    {VARROA_KALENDER.map(function(v, i) {
+                      var isAktiv = false;
+                      var monatMap = {"Dez–Jan":[11,0],"Apr–Mai":[3,4],"Jul (nach Ernte)":[6],"Aug–Sep":[7,8],"Sep–Okt":[8,9],"Nov–Dez":[10,11]};
+                      var mm = monatMap[v.zeit]; if (mm) { mm.forEach(function(m) { if (m === curMonth) isAktiv = true; }); }
+                      return <div key={i} style={{ display: "flex", gap: 12, padding: "14px 16px", background: isAktiv ? v.color + "15" : C.surfaceLight, borderRadius: 12, alignItems: "flex-start", border: `1px solid ${isAktiv ? v.color + "44" : "transparent"}` }}>
+                        <div style={{ width: 75, flexShrink: 0 }}>
+                          <div style={{ fontSize: 13, fontWeight: 800, color: v.color }}>{v.zeit}</div>
+                          {isAktiv && <div style={{ fontSize: 9, fontWeight: 700, color: v.color, marginTop: 3, textTransform: "uppercase" }}>▶ Jetzt</div>}
+                        </div>
+                        <div>
+                          <div style={{ fontSize: 14, fontWeight: 700, color: C.text, marginBottom: 3 }}>{v.aktion}</div>
+                          <div style={{ fontSize: 12, color: C.textMuted, lineHeight: 1.5 }}>{v.hinweis}</div>
+                        </div>
+                      </div>;
+                    })}
+                  </div>
+                </div>
+                <div style={{ ...card }}>
+                  <h3 style={{ ...sectionTitle, margin: "0 0 8px" }}>📖 Wichtig zu wissen</h3>
+                  <div style={{ fontSize: 13, color: C.textMuted, lineHeight: 1.7 }}>
+                    <p style={{ marginBottom: 8 }}>🔬 <strong style={{ color: C.text }}>Gemülldiagnose:</strong> Natürlicher Milbenfall unter 5/Tag im Sept. = OK. Darüber: Nachbehandlung nötig.</p>
+                    <p style={{ marginBottom: 8 }}>🌡️ <strong style={{ color: C.text }}>Ameisensäure:</strong> Wirkung nur bei 15–25°C. Varroawetter-Prognose der LWG Veitshöchheim nutzen!</p>
+                    <p style={{ marginBottom: 8 }}>❄️ <strong style={{ color: C.text }}>Oxalsäure:</strong> Nur bei Brutfreiheit wirksam. Ideal bei unter 5°C, oft Ende Dezember.</p>
+                    <p>🆕 <strong style={{ color: C.text }}>Oxalsäure-Streifen:</strong> Seit 2025 zugelassen. Behandlung auch mit Brut möglich.</p>
+                  </div>
+                </div>
+              </div>)}
+
+              {/* LINKS */}
+              {wissenView === "links" && (<div>
+                {WISSEN_LINKS.map(function(cat, ci) { return (
+                  <div key={ci} style={{ ...card, marginBottom: 14 }}>
+                    <h3 style={{ ...sectionTitle, margin: "0 0 10px" }}>{cat.cat}</h3>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                      {cat.links.map(function(l, i) { return (
+                        <a key={i} href={l.url} target="_blank" rel="noopener noreferrer" style={{ background: C.surfaceLight, borderRadius: 12, padding: "14px 16px", textDecoration: "none", color: C.text, border: `1px solid ${C.border}`, display: "block" }}>
+                          <div style={{ fontSize: 15, fontWeight: 700, color: C.accent, marginBottom: 4 }}>{l.name} ↗</div>
+                          <div style={{ fontSize: 12, color: C.textMuted, lineHeight: 1.5 }}>{l.desc}</div>
+                        </a>
+                      ); })}
+                    </div>
+                  </div>
+                ); })}
+              </div>)}
             </div>
           );
         })()}
@@ -1164,7 +1453,7 @@ function SchwarmzeitKalender() {
                 </div>
                 {/* Tracht bars — each on its own row */}
                 <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                  {TRACHTEN.map((t, i) => (
+                  {trachten.map((t, i) => (
                     <div key={i} style={{ display: "flex", alignItems: "center", gap: 8 }}>
                       <div style={{ width: 95, fontSize: 12, fontWeight: 600, color: t.color, whiteSpace: "nowrap", flexShrink: 0, textAlign: "right" }}>
                         {t.emoji} {t.name}
