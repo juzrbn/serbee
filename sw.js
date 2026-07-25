@@ -1,4 +1,4 @@
-const CACHE_NAME = 'serbee-v11';
+const CACHE_NAME = 'serbee-v13';
 const ASSETS = [
   './',
   './index.html',

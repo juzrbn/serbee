@@ -177,6 +177,7 @@ function SchwarmzeitKalender() {
   const [voiceSupported] = useState(() => typeof window !== "undefined" && ("SpeechRecognition" in window || "webkitSpeechRecognition" in window));
   const [wissenView, setWissenView] = useState("aktuell");
   const [wissenTag, setWissenTag] = useState(null);
+  const [showGame, setShowGame] = useState(false);
 
   const parseVoice = useCallback((text) => {
     const t = text.toLowerCase();
@@ -490,7 +491,7 @@ function SchwarmzeitKalender() {
         <div style={{ padding: "22px 0 14px" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 8 }}>
             <div>
-              <h1 style={{ fontSize: 30, fontWeight: 800, margin: 0, color: C.accent, letterSpacing: -1 }}>🐝 SerBee</h1>
+              <h1 onTouchStart={function() { window._gameTimer = setTimeout(function() { setShowGame(true); }, 2000); }} onTouchEnd={function() { clearTimeout(window._gameTimer); }} onMouseDown={function() { window._gameTimer = setTimeout(function() { setShowGame(true); }, 2000); }} onMouseUp={function() { clearTimeout(window._gameTimer); }} style={{ fontSize: 30, fontWeight: 800, margin: 0, color: C.accent, letterSpacing: -1, cursor: "pointer", userSelect: "none" }}>🐝 SerBee</h1>
               <p style={{ fontSize: 13, color: C.textMuted, margin: "3px 0 0" }}>Dein Imkereiplaner</p>
             </div>
             {getNextKontrolle() && (
@@ -974,22 +975,49 @@ function SchwarmzeitKalender() {
 
         {/* ═══════════ REGION TAB ═══════════ */}
         {activeTab === "region" && (() => {
-          const REF = [
-            { tracht: "Obstblüte", emoji: "🌸", kg: "5–12", zeit: "April – Mitte Mai", hinweis: "Stark witterungsabhängig, Spätfrost-Risiko im Lechtal" },
-            { tracht: "Raps", emoji: "🌼", kg: "10–25", zeit: "Ende April – Mitte Juni", hinweis: "Sehr gute Tracht wenn Rapsfelder in Flugreichweite, schnell kristallisierend" },
-            { tracht: "Robinie", emoji: "🌿", kg: "5–15", zeit: "Ende Mai – Mitte Juni", hinweis: "Im Raum Landsberg eher selten, punktuell möglich" },
-            { tracht: "Linde", emoji: "🌳", kg: "8–20", zeit: "Juni – Juli", hinweis: "Gute Bestände in Parks und Alleen, witterungsabhängig" },
-            { tracht: "Wald/Honigtau", emoji: "🌲", kg: "0–30+", zeit: "Juni – August", hinweis: "Sehr variabel! Hängt von Lachniden-Entwicklung ab. In guten Jahren Spitzenerträge, oft aber Totalausfall" },
-            { tracht: "Sonnenblume", emoji: "🌻", kg: "3–10", zeit: "Juli – August", hinweis: "Nur bei Anbau in der Nähe relevant" },
-            { tracht: "Heide", emoji: "💜", kg: "0–5", zeit: "August – September", hinweis: "Im Voralpenland kaum relevant, eher norddeutsche Tracht" },
-          ];
-          const LINKS = [
-            { name: "TrachtNet Bayern — Stockwaagen Landsberg", url: "https://www.trachtnet.de", desc: "Tagesaktuelle Waagendaten vom Agrarbildungszentrum Landsberg und weiteren Standorten in Oberbayern" },
-            { name: "Bezirk Oberbayern — Bienenstockwaagen", url: "https://www.bezirk-oberbayern.de/Umwelt/Fachberatung-f%C3%BCr-Imkerei/Bienenstockwaagen/", desc: "Stockwaagen der Fachberatung für Imkerei, u.a. Standort Landsberg am Lech" },
-            { name: "Waldtrachtbeobachter Süd", url: "https://www.waldtrachtbeobachter-sued.de", desc: "Beobachtungen zu Honigtauerzeugern an Fichten und Tannen — wichtig für Waldtracht-Prognose" },
-            { name: "BeeScales.io — Öffentliche Waagen", url: "https://public.beescales.io", desc: "Öffentlich einsehbare Stockwaagen-Daten aus ganz Europa" },
-            { name: "HoneyPi — Open Source Stockwaage", url: "https://honey-pi.de", desc: "Selbstbau-Stockwaage auf Raspberry Pi Basis, Community-Daten" },
-          ];
+          // Dynamische Richtwerte basierend auf aktiven Trachten und Breitengrad
+          const lat = standort.lat || 48;
+          const refData = {
+            "Löwenzahn":    { kg: "3–10",  hinweis: "Witterungsabhängig, nur bei starken Wiesen-Beständen ergiebig" },
+            "Obstblüte":    { kg: "5–12",  hinweis: lat > 50 ? "Spätfrost-Risiko, stark witterungsabhängig" : lat < 46 ? "Frühe und meist sichere Tracht, oft schon Ende März" : "Stark witterungsabhängig, Spätfrost-Risiko möglich" },
+            "Raps":         { kg: "10–25", hinweis: "Sehr gute Tracht wenn Rapsfelder in Flugreichweite, schnell kristallisierend — rechtzeitig schleudern!" },
+            "Robinie":      { kg: lat < 46 ? "15–30" : "5–15", hinweis: lat < 46 ? "In Südosteuropa Haupttracht! Akazienhonig sehr begehrt" : lat > 52 ? "Nur punktuell in Parks und Alleen, nicht überall verfügbar" : "Punktuell möglich, kurze aber intensive Blüte" },
+            "Linde":        { kg: "8–20",  hinweis: "Sommerlinde ab Mitte Juni, Winterlinde ab Juli. Gute Bestände in Parks und Alleen" },
+            "Wald/Honigtau":{ kg: lat > 46 ? "0–30+" : "0–15", hinweis: lat > 46 ? "Sehr variabel! Hängt von Lachniden-Entwicklung ab. In guten Jahren Spitzenerträge" : "Weniger relevant in Tieflagen Südeuropas, eher in Mittelgebirgs- und Alpenregionen" },
+            "Sonnenblume":  { kg: lat < 46 ? "10–25" : "3–10", hinweis: lat < 46 ? "In Südosteuropa Massentracht! Riesige Anbauflächen, sehr ergiebig" : "Nur bei Anbau in der Nähe relevant" },
+            "Akazie":       { kg: "15–30", hinweis: "Haupttracht in Rumänien, Ungarn, Serbien — einer der wertvollsten Sortenhonige Europas" },
+            "Heide":        { kg: "5–15",  hinweis: "Wichtige Spättracht in Norddeutschland (Lüneburger Heide), spezielle Ernte nötig (pressen)" },
+            "Wiesenblumen": { kg: "5–15",  hinweis: "Klee, Kräuter und Wildblumen — typische Sommertracht in Grünlandgebieten" },
+            "Phacelia":     { kg: "5–15",  hinweis: "Wird als Zwischenfrucht angebaut, schließt das Juniloch zwischen Raps und Linde" },
+          };
+          const REF = trachten.map(function(t) {
+            var rd = refData[t.name] || { kg: "3–15", hinweis: "Regionale Erfahrungswerte" };
+            var startM = MONTHS[t.start[0]]; var endM = MONTHS[t.end[0]];
+            return { tracht: t.name, emoji: t.emoji, color: t.color, kg: rd.kg, zeit: startM + " – " + endM, hinweis: rd.hinweis };
+          });
+
+          // Dynamische Links basierend auf Region
+          var regionalLinks = [];
+          if (lat >= 47 && lat <= 49.5 && standort.lon >= 9 && standort.lon <= 14) {
+            // Bayern / Österreich
+            regionalLinks.push({ name: "TrachtNet Bayern — Stockwaagen", url: "https://www.trachtnet.de", desc: "Tagesaktuelle Waagendaten aus Bayern, u.a. Oberbayern und Schwaben" });
+            regionalLinks.push({ name: "Bezirk Oberbayern — Bienenstockwaagen", url: "https://www.bezirk-oberbayern.de/Umwelt/Fachberatung-f%C3%BCr-Imkerei/Bienenstockwaagen/", desc: "Stockwaagen der Fachberatung für Imkerei in Oberbayern" });
+            regionalLinks.push({ name: "Waldtrachtbeobachter Süd", url: "https://www.waldtrachtbeobachter-sued.de", desc: "Honigtau-Prognosen für Süddeutschland und Alpenraum" });
+          } else if (lat >= 47 && lat <= 49.5 && standort.lon < 9) {
+            // Baden-Württemberg / Schweiz
+            regionalLinks.push({ name: "Waldtrachtbeobachter Süd", url: "https://www.waldtrachtbeobachter-sued.de", desc: "Honigtau-Prognosen für Süddeutschland" });
+            regionalLinks.push({ name: "TrachtNet Baden-Württemberg", url: "https://www.trachtnet.de", desc: "Waagendaten aus dem Südwesten" });
+          } else if (lat > 49.5 && lat <= 55) {
+            // Nord-/Mitteldeutschland
+            regionalLinks.push({ name: "TrachtNet Deutschland", url: "https://www.trachtnet.de", desc: "Tagesaktuelle Waagendaten aus ganz Deutschland" });
+          } else if (lat < 47) {
+            // Südeuropa
+            regionalLinks.push({ name: "Apimondia", url: "https://www.apimondia.com", desc: "Internationaler Imkerverband — Konferenzen und Forschung weltweit" });
+          }
+          // Immer dabei
+          regionalLinks.push({ name: "BeeScales.io — Öffentliche Waagen", url: "https://public.beescales.io", desc: "Öffentlich einsehbare Stockwaagen-Daten aus ganz Europa" });
+          regionalLinks.push({ name: "HoneyPi — Open Source Stockwaage", url: "https://honey-pi.de", desc: "Selbstbau-Stockwaage auf Raspberry Pi Basis, Community-Daten" });
+          var LINKS = regionalLinks;
           const thisYear = TODAY.getFullYear();
           const thisYearErnten = ernten.filter(e => e.datum && e.datum.startsWith(String(thisYear)));
           const totalKg = thisYearErnten.reduce((s, e) => s + (parseFloat(e.kg) || 0), 0);
@@ -1125,8 +1153,8 @@ function SchwarmzeitKalender() {
 
               {/* Regionale Referenzwerte */}
               <div style={{ ...card, marginBottom: 14, padding: 16 }}>
-                <h3 style={{ ...sectionTitle, margin: "0 0 4px" }}>📊 Richtwerte Raum Landsberg / Oberbayern</h3>
-                <p style={{ fontSize: 11, color: C.textDim, marginBottom: 12, lineHeight: 1.5 }}>Langjährige Erfahrungswerte für Honigertrag pro Volk. Stark abhängig von Witterung, Standort und Volksstärke — dienen als grobe Orientierung.</p>
+                <h3 style={{ ...sectionTitle, margin: "0 0 4px" }}>📊 Richtwerte Raum {standort.name}</h3>
+                <p style={{ fontSize: 11, color: C.textDim, marginBottom: 12, lineHeight: 1.5 }}>Erfahrungswerte für Honigertrag pro Volk, angepasst an den Standort ({standort.lat.toFixed(1)}°N). Stark abhängig von Witterung und Volksstärke.</p>
                 <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                   {REF.map((r, i) => (
                     <div key={i} style={{ background: C.surfaceLight, borderRadius: 10, padding: "10px 14px" }}>
@@ -1149,8 +1177,8 @@ function SchwarmzeitKalender() {
 
               {/* Live-Datenquellen */}
               <div style={{ ...card, padding: 16 }}>
-                <h3 style={{ ...sectionTitle, margin: "0 0 4px" }}>🔗 Live-Daten & Stockwaagen in der Region</h3>
-                <p style={{ fontSize: 11, color: C.textDim, marginBottom: 12, lineHeight: 1.5 }}>Tagesaktuelle Stockwaagen-Daten und Trachtbeobachtungen — extern, da keine offene API verfügbar.</p>
+                <h3 style={{ ...sectionTitle, margin: "0 0 4px" }}>🔗 Datenquellen & Stockwaagen</h3>
+                <p style={{ fontSize: 11, color: C.textDim, marginBottom: 12, lineHeight: 1.5 }}>Regionale und überregionale Live-Daten passend zu deinem Standort.</p>
                 <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                   {LINKS.map((l, i) => (
                     <a key={i} href={l.url} target="_blank" rel="noopener noreferrer" style={{
@@ -1612,6 +1640,12 @@ function SchwarmzeitKalender() {
           </div>
         )}
       </div>
+
+      {/* ═══════════ GAME OVERLAY (Easter Egg) ═══════════ */}
+      {showGame && (<div style={{ position: "fixed", inset: 0, zIndex: 9999, background: "#000" }}>
+        <button onClick={() => setShowGame(false)} style={{ position: "fixed", top: 12, right: 12, zIndex: 10000, background: "rgba(0,0,0,0.6)", color: "#fff", border: "2px solid rgba(255,255,255,0.3)", borderRadius: "50%", width: 40, height: 40, cursor: "pointer", fontSize: 18, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>✕</button>
+        <iframe src="game.html" style={{ width: "100%", height: "100%", border: "none" }} allow="autoplay" />
+      </div>)}
     </div>
   );
 }
